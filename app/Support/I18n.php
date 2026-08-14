@@ -1,0 +1,137 @@
+<?php
+
+namespace App\Support;
+
+class I18n
+{
+    protected const MESSAGES = [
+        'en' => [
+            'auth.registered' => 'Registration successful.',
+            'auth.logged_in' => 'Login successful.',
+            'auth.logged_out' => 'Logged out successfully.',
+            'auth.password_reset_link_sent' => 'If the email exists, we will send password reset instructions.',
+            'auth.password_updated' => 'Password updated successfully.',
+            'auth.locale_updated' => 'Language preference updated successfully.',
+            'stock.low' => 'Only a few pieces are available.',
+            'stock.out' => 'Product is out of stock.',
+            'stock.only_available' => 'Only {stock} piece(s) available.',
+            'checkout.empty_cart' => 'Your cart is empty.',
+            'checkout.missing_shipping_address' => 'Add or select a shipping address.',
+            'checkout.invalid_quantity' => 'The quantity for {product} is invalid.',
+            'checkout.invalid_price' => 'The product {product} does not have a valid price.',
+            'checkout.insufficient_stock' => 'The product {product} does not have enough inventory.',
+            'checkout.shipping_selected' => 'Shipping address selected.',
+            'checkout.shipping_required' => 'Add or select a shipping address to continue.',
+            'checkout.gift_accounting_note' => 'Gift units are invoiced at $0.10 per unit.',
+            'promotion.bundle' => 'Buy {buy_quantity} and pay for {pay_quantity}',
+            'promotion.buy_discount' => 'Buy {buy_quantity} and get {discount_percentage}% off',
+            'promotion.direct_percentage' => '{discount_percentage}% off available for this product',
+            'promotion.strikethrough' => 'Promotional price available: ${price}',
+            'promotion.price_scale' => '{discount_percentage}% off from {range} piece(s)',
+            'promotion.buy_get_y' => 'Buy {buy_quantity} and receive {target_quantity} with {discount_percentage}% off',
+            'promotion.gift_item' => 'Buy {buy_quantity} and receive an exclusive gift',
+            'promotion.eligible' => 'You qualify for this promotion.',
+            'promotion.direct_applies' => 'This promotion applies directly to this product.',
+            'promotion.add_more' => 'Add {missing} more piece(s) to activate this promotion.',
+            'promotion.scale_add_more' => 'Add {missing} more piece(s) to activate this price tier.',
+            'promotion.scale_highest' => 'You are already in the highest available tier.',
+            'promotion.scale_next' => 'You already qualify for this tier. Add {missing} more piece(s) to move up to {discount_percentage}% off.',
+            'email.password_reset.subject' => 'Reset your password',
+            'email.password_reset.title' => 'Reset your password',
+            'email.password_reset.greeting' => 'Hi {name}, we received a request to change your password.',
+            'email.password_reset.copy' => 'Use the button below to create a new password. If you did not request this change, you can ignore this email.',
+            'email.password_reset.button' => 'Change password',
+            'email.password_reset.footer' => 'This link is temporary for your security.',
+        ],
+        'es' => [
+            'auth.registered' => 'Registro exitoso.',
+            'auth.logged_in' => 'Inicio de sesión exitoso.',
+            'auth.logged_out' => 'Sesión cerrada correctamente.',
+            'auth.password_reset_link_sent' => 'Si el correo existe, enviaremos instrucciones para recuperar la contraseña.',
+            'auth.password_updated' => 'Contraseña actualizada correctamente.',
+            'auth.locale_updated' => 'Preferencia de idioma actualizada correctamente.',
+            'stock.low' => 'Hay pocas piezas disponibles.',
+            'stock.out' => 'Producto sin inventario disponible.',
+            'stock.only_available' => 'Solo hay {stock} pieza(s) disponibles.',
+            'checkout.empty_cart' => 'Tu carrito está vacío.',
+            'checkout.missing_shipping_address' => 'Agrega o selecciona una dirección de envío.',
+            'checkout.invalid_quantity' => 'La cantidad de {product} no es válida.',
+            'checkout.invalid_price' => 'El producto {product} no tiene precio válido.',
+            'checkout.insufficient_stock' => 'El producto {product} no tiene inventario suficiente.',
+            'checkout.shipping_selected' => 'Dirección de envío seleccionada.',
+            'checkout.shipping_required' => 'Agrega o selecciona una dirección de envío para continuar.',
+            'checkout.gift_accounting_note' => 'Las unidades de regalo se facturan a $0.10 por unidad.',
+            'promotion.bundle' => 'Lleva {buy_quantity} y paga {pay_quantity}',
+            'promotion.buy_discount' => 'Compra {buy_quantity} y obtén {discount_percentage}% de descuento',
+            'promotion.direct_percentage' => '{discount_percentage}% de descuento disponible para este producto',
+            'promotion.strikethrough' => 'Precio promocional disponible: ${price}',
+            'promotion.price_scale' => '{discount_percentage}% de descuento de {range} pieza(s)',
+            'promotion.buy_get_y' => 'Compra {buy_quantity} y recibe {target_quantity} con {discount_percentage}% de descuento',
+            'promotion.gift_item' => 'Compra {buy_quantity} y recibe regalo exclusivo',
+            'promotion.eligible' => 'Ya cumples esta promoción.',
+            'promotion.direct_applies' => 'Esta promoción aplica directamente a este producto.',
+            'promotion.add_more' => 'Agrega {missing} pieza(s) más para activar esta promoción.',
+            'promotion.scale_add_more' => 'Agrega {missing} pieza(s) más para activar esta escala.',
+            'promotion.scale_highest' => 'Ya estás en la escala más alta disponible.',
+            'promotion.scale_next' => 'Ya cumples esta escala. Agrega {missing} pieza(s) más para subir a {discount_percentage}% de descuento.',
+            'email.password_reset.subject' => 'Recupera tu contraseña',
+            'email.password_reset.title' => 'Recupera tu contraseña',
+            'email.password_reset.greeting' => 'Hola {name}, recibimos una solicitud para cambiar tu contraseña.',
+            'email.password_reset.copy' => 'Usa el siguiente botón para crear una nueva contraseña. Si no solicitaste este cambio, puedes ignorar este correo.',
+            'email.password_reset.button' => 'Cambiar contraseña',
+            'email.password_reset.footer' => 'Este enlace es temporal por seguridad.',
+        ],
+        'fr' => [
+            'auth.registered' => 'Inscription réussie.',
+            'auth.logged_in' => 'Connexion réussie.',
+            'auth.logged_out' => 'Déconnexion réussie.',
+            'auth.password_reset_link_sent' => 'Si l’adresse e-mail existe, nous enverrons les instructions de réinitialisation.',
+            'auth.password_updated' => 'Mot de passe mis à jour avec succès.',
+            'auth.locale_updated' => 'Préférence de langue mise à jour avec succès.',
+            'stock.low' => 'Il ne reste que quelques pièces disponibles.',
+            'stock.out' => 'Produit indisponible.',
+            'stock.only_available' => 'Seulement {stock} pièce(s) disponible(s).',
+            'checkout.empty_cart' => 'Votre panier est vide.',
+            'checkout.missing_shipping_address' => 'Ajoutez ou sélectionnez une adresse de livraison.',
+            'checkout.invalid_quantity' => 'La quantité pour {product} n’est pas valide.',
+            'checkout.invalid_price' => 'Le produit {product} n’a pas de prix valide.',
+            'checkout.insufficient_stock' => 'Le produit {product} n’a pas suffisamment de stock.',
+            'checkout.shipping_selected' => 'Adresse de livraison sélectionnée.',
+            'checkout.shipping_required' => 'Ajoutez ou sélectionnez une adresse de livraison pour continuer.',
+            'checkout.gift_accounting_note' => 'Les unités offertes sont facturées à 0,10 $ par unité.',
+            'promotion.bundle' => 'Achetez {buy_quantity} et payez {pay_quantity}',
+            'promotion.buy_discount' => 'Achetez {buy_quantity} et obtenez {discount_percentage}% de réduction',
+            'promotion.direct_percentage' => '{discount_percentage}% de réduction disponible pour ce produit',
+            'promotion.strikethrough' => 'Prix promotionnel disponible : ${price}',
+            'promotion.price_scale' => '{discount_percentage}% de réduction à partir de {range} pièce(s)',
+            'promotion.buy_get_y' => 'Achetez {buy_quantity} et recevez {target_quantity} avec {discount_percentage}% de réduction',
+            'promotion.gift_item' => 'Achetez {buy_quantity} et recevez un cadeau exclusif',
+            'promotion.eligible' => 'Vous êtes éligible à cette promotion.',
+            'promotion.direct_applies' => 'Cette promotion s’applique directement à ce produit.',
+            'promotion.add_more' => 'Ajoutez {missing} pièce(s) de plus pour activer cette promotion.',
+            'promotion.scale_add_more' => 'Ajoutez {missing} pièce(s) de plus pour activer ce palier.',
+            'promotion.scale_highest' => 'Vous êtes déjà dans le palier le plus élevé disponible.',
+            'promotion.scale_next' => 'Vous êtes déjà éligible à ce palier. Ajoutez {missing} pièce(s) de plus pour atteindre {discount_percentage}% de réduction.',
+            'email.password_reset.subject' => 'Réinitialisez votre mot de passe',
+            'email.password_reset.title' => 'Réinitialisez votre mot de passe',
+            'email.password_reset.greeting' => 'Bonjour {name}, nous avons reçu une demande de changement de mot de passe.',
+            'email.password_reset.copy' => 'Utilisez le bouton ci-dessous pour créer un nouveau mot de passe. Si vous n’avez pas demandé ce changement, vous pouvez ignorer cet e-mail.',
+            'email.password_reset.button' => 'Changer le mot de passe',
+            'email.password_reset.footer' => 'Ce lien est temporaire pour votre sécurité.',
+        ],
+    ];
+
+    public static function get(string $key, array $replace = [], ?string $locale = null): string
+    {
+        $locale ??= Localization::currentLocale(request());
+        $message = static::MESSAGES[$locale][$key]
+            ?? static::MESSAGES['en'][$key]
+            ?? $key;
+
+        foreach ($replace as $name => $value) {
+            $message = str_replace('{' . $name . '}', (string) $value, $message);
+        }
+
+        return $message;
+    }
+}

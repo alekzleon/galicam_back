@@ -1,0 +1,115 @@
+<?php
+
+namespace Database\Seeders;
+
+use Illuminate\Database\Console\Seeds\WithoutModelEvents;
+use Illuminate\Database\Seeder;
+use App\Models\Module;
+use App\Models\Role;
+
+class RoleModuleSeeder extends Seeder
+{
+    public function run(): void
+    {
+        $map = [
+            'super_admin' => [
+                'dashboard',
+                'usuarios',
+                'roles',
+                'productos',
+                'categorias',
+                'familias',
+                'regiones',
+                'carga_masiva_productos',
+                'variantes',
+                'pedidos',
+                'carritos',
+                'clientes',
+                'canales_venta',
+                'credito',
+                'cobranza',
+                'marketing',
+                'promociones',
+                'banners',
+                'logs',
+                'sincronizacion',
+                'configuracion_ecommerce',
+                'notificaciones',
+                'front_ecommerce',
+            ],
+            'admin' => [
+                'dashboard',
+                'usuarios',
+                'roles',
+                'productos',
+                'categorias',
+                'familias',
+                'regiones',
+                'carga_masiva_productos',
+                'variantes',
+                'pedidos',
+                'carritos',
+                'clientes',
+                'canales_venta',
+                'credito',
+                'cobranza',
+                'marketing',
+                'promociones',
+                'banners',
+                'logs',
+                'sincronizacion',
+                'configuracion_ecommerce',
+                'notificaciones',
+            ],
+            'sistemas' => [
+                'dashboard',
+                'usuarios',
+                'roles',
+                'productos',
+                'categorias',
+                'familias',
+                'regiones',
+                'carga_masiva_productos',
+                'variantes',
+                'pedidos',
+                'carritos',
+                'clientes',
+                'canales_venta',
+                'credito',
+                'cobranza',
+                'marketing',
+                'promociones',
+                'banners',
+                'logs',
+                'sincronizacion',
+                'configuracion_ecommerce',
+                'notificaciones',
+            ],
+            'marketing' => [
+                'marketing',
+                'promociones',
+                'banners',
+            ],
+            'credito_cobranza' => [
+                'clientes',
+                'credito',
+                'cobranza',
+            ],
+            'cliente' => [
+                'front_ecommerce',
+            ],
+        ];
+
+        foreach ($map as $roleName => $moduleNames) {
+            $role = Role::where('name', $roleName)->first();
+
+            if (!$role) {
+                continue;
+            }
+
+            $moduleIds = Module::whereIn('name', $moduleNames)->pluck('id')->toArray();
+
+            $role->modules()->sync($moduleIds);
+        }
+    }
+}

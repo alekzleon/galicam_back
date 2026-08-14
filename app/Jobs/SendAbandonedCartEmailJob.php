@@ -1,0 +1,80 @@
+<?php
+
+namespace App\Jobs;
+
+use App\Mail\AbandonedCartMail;
+use App\Models\Cart;
+use App\Models\EcommerceSetting;
+use Illuminate\Contracts\Queue\ShouldQueue;
+use Illuminate\Foundation\Queue\Queueable;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Mail;
+use Illuminate\Support\Facades\URL;
+
+class SendAbandonedCartEmailJob implements ShouldQueue
+{
+    use Queueable;
+
+    public int $cartId;
+
+    public function __construct(int $cartId)
+    {
+        $this->cartId = $cartId;
+    }
+
+    public function handle(): void
+    {
+        $cart = Cart::with(['user', 'items.product'])->find($this->cartId);
+
+        if (!$cart) {
+            Log::warning('Carrito no encontrado para email de abandono.', [
+                'cart_id' => $this->cartId,
+            ]);
+            return;
+        }
+
+        if ($cart->status !== 'abandoned') {
+            Log::info('El carrito ya no está abandonado, no se envía correo.', [
+                'cart_id' => $cart->id,
+                'status' => $cart->status,
+            ]);
+            return;
+        }
+
+        if (!$cart->user || !$cart->user->email) {
+            Log::warning('El carrito abandonado no tiene email.', [
+                'cart_id' => $cart->id,
+            ]);
+            return;
+        }
+
+        $settings = EcommerceSetting::abandonedCartSettings();
+        $expiresAt = now()->addHours((int) data_get($settings, 'recovery_link_expires_hours', 48));
+
+        $recoverPath = URL::temporarySignedRoute(
+            'cart.recover',
+            $expiresAt,
+            ['cart' => $cart->id],
+            false
+        );
+        $backendRecoverUrl = rtrim((string) config('services.backend.url'), '/') . $recoverPath;
+        $recoverUrl = rtrim((string) config('services.frontend.url'), '/') . '/carrito?' . http_build_query([
+            'cart_id' => $cart->id,
+            'recover_url' => $backendRecoverUrl,
+        ]);
+
+        $recipient = config('services.testing_recipients.abandoned_cart_email') ?: $cart->user->email;
+
+        Mail::to($recipient)->send(
+            new AbandonedCartMail($cart, $recoverUrl)
+        );
+
+        Log::info('Correo de carrito abandonado enviado.', [
+            'cart_id' => $cart->id,
+            'email' => $recipient,
+            'original_email' => $cart->user->email,
+        ]);
+
+        $cart->forceFill(['abandoned_email_sent_at' => now()])->save();
+    }
+}
