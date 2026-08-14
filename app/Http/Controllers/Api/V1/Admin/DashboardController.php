@@ -6,9 +6,11 @@ use App\Enums\CartStatus;
 use App\Http\Controllers\Controller;
 use App\Models\Cart;
 use App\Models\CashbackTransaction;
+use App\Models\MarketplaceTransfer;
 use App\Models\Order;
 use App\Models\OrderItem;
 use App\Models\Product;
+use App\Models\Region;
 use App\Models\User;
 use App\Services\SalesChannelService;
 use Carbon\Carbon;
@@ -25,6 +27,10 @@ class DashboardController extends Controller
 
     public function index(Request $request): JsonResponse
     {
+        if ($this->isRegionalAdmin($request)) {
+            return $this->marketplace($request);
+        }
+
         [$from, $to] = $this->dateRange($request);
 
         return response()->json([
@@ -54,6 +60,12 @@ class DashboardController extends Controller
 
     public function salesChannels(Request $request): JsonResponse
     {
+        abort_if(
+            $this->isRegionalAdmin($request),
+            403,
+            'El dashboard global de canales no esta disponible para administradores regionales.'
+        );
+
         [$from, $to] = $this->dateRange($request);
         $channel = $this->salesChannelService->normalize($request->string('sales_channel')->toString());
         $limit = max(1, min((int) $request->integer('limit', 5), 20));
@@ -79,6 +91,30 @@ class DashboardController extends Controller
                     ])
                     ->values()
                     ->all(),
+            ],
+        ]);
+    }
+
+    public function marketplace(Request $request): JsonResponse
+    {
+        [$from, $to] = $this->dateRange($request);
+        $regionId = $this->requestedRegionId($request);
+
+        return response()->json([
+            'ok' => true,
+            'message' => 'Dashboard marketplace obtenido correctamente.',
+            'data' => [
+                'filters' => [
+                    'from' => $from->toDateString(),
+                    'to' => $to->toDateString(),
+                    'region_id' => $regionId,
+                ],
+                'summary' => $this->marketplaceSummary($from, $to, $regionId),
+                'regions' => $this->marketplaceByRegion($from, $to, $regionId),
+                'transfers_by_status' => $this->marketplaceTransfersByStatus($from, $to, $regionId),
+                'stripe_connect' => $this->marketplaceStripeConnectSummary($regionId),
+                'recent_orders' => $this->marketplaceRecentOrders($from, $to, $regionId),
+                'recent_transfers' => $this->marketplaceRecentTransfers($from, $to, $regionId),
             ],
         ]);
     }
@@ -134,6 +170,144 @@ class DashboardController extends Controller
             'cashback_redeemed' => round($cashbackRedeemed, 2),
             'cashback_available_balance' => round($availableCashback, 2),
             'estimated_customer_savings' => round($discounts + $cashbackRedeemed, 2),
+        ];
+    }
+
+    protected function marketplaceSummary(Carbon $from, Carbon $to, ?int $regionId = null): array
+    {
+        $items = $this->marketplaceItemsBaseQuery($from, $to, $regionId)
+            ->selectRaw('COUNT(DISTINCT orders.id) as orders_count')
+            ->selectRaw('COUNT(*) as items_lines_count')
+            ->selectRaw('SUM(order_items.quantity) as items_count')
+            ->selectRaw('SUM(order_items.line_total) as subtotal')
+            ->selectRaw("SUM(COALESCE(JSON_UNQUOTE(JSON_EXTRACT(order_items.metadata, '$.tax.tax_amount')), 0)) as tax")
+            ->selectRaw("SUM(COALESCE(JSON_UNQUOTE(JSON_EXTRACT(order_items.metadata, '$.marketplace.commission_amount')), 0)) as commission_amount")
+            ->first();
+
+        $subtotal = round((float) ($items->subtotal ?? 0), 2);
+        $tax = round((float) ($items->tax ?? 0), 2);
+        $commission = round((float) ($items->commission_amount ?? 0), 2);
+        $gross = round($subtotal + $tax, 2);
+
+        $transfers = $this->marketplaceTransfersBaseQuery($from, $to, $regionId)
+            ->selectRaw('SUM(transfer_amount) as transfer_amount')
+            ->selectRaw("SUM(CASE WHEN status = ? THEN transfer_amount ELSE 0 END) as transferred_amount", [MarketplaceTransfer::STATUS_SUCCEEDED])
+            ->selectRaw("SUM(CASE WHEN status = ? THEN transfer_amount ELSE 0 END) as failed_amount", [MarketplaceTransfer::STATUS_FAILED])
+            ->first();
+
+        return [
+            'orders' => (int) ($items->orders_count ?? 0),
+            'items_lines_count' => (int) ($items->items_lines_count ?? 0),
+            'items_count' => round((float) ($items->items_count ?? 0), 2),
+            'gross_amount' => $gross,
+            'subtotal' => $subtotal,
+            'tax' => $tax,
+            'commission_amount' => $commission,
+            'net_amount' => max(0, round($gross - $commission, 2)),
+            'transfer_amount' => round((float) ($transfers->transfer_amount ?? 0), 2),
+            'transferred_amount' => round((float) ($transfers->transferred_amount ?? 0), 2),
+            'failed_transfer_amount' => round((float) ($transfers->failed_amount ?? 0), 2),
+        ];
+    }
+
+    protected function marketplaceByRegion(Carbon $from, Carbon $to, ?int $regionId = null): array
+    {
+        return $this->marketplaceItemsBaseQuery($from, $to, $regionId)
+            ->join('regions', 'regions.id', '=', DB::raw("CAST(JSON_UNQUOTE(JSON_EXTRACT(order_items.metadata, '$.regional_catalog.region_id')) AS UNSIGNED)"))
+            ->selectRaw("CAST(JSON_UNQUOTE(JSON_EXTRACT(order_items.metadata, '$.regional_catalog.region_id')) AS UNSIGNED) as region_id")
+            ->selectRaw("JSON_UNQUOTE(JSON_EXTRACT(order_items.metadata, '$.regional_catalog.region_name')) as region_name")
+            ->selectRaw("JSON_UNQUOTE(JSON_EXTRACT(order_items.metadata, '$.regional_catalog.region_slug')) as region_slug")
+            ->selectRaw('COUNT(DISTINCT orders.id) as orders')
+            ->selectRaw('SUM(order_items.quantity) as items_count')
+            ->selectRaw('SUM(order_items.line_total) as subtotal')
+            ->selectRaw("SUM(COALESCE(JSON_UNQUOTE(JSON_EXTRACT(order_items.metadata, '$.tax.tax_amount')), 0)) as tax")
+            ->selectRaw("SUM(COALESCE(JSON_UNQUOTE(JSON_EXTRACT(order_items.metadata, '$.marketplace.commission_amount')), 0)) as commission_amount")
+            ->selectRaw('MAX(regions.stripe_connect_status) as stripe_connect_status')
+            ->selectRaw('MAX(regions.stripe_charges_enabled) as stripe_charges_enabled')
+            ->groupBy('region_id', 'region_name', 'region_slug')
+            ->orderByDesc('subtotal')
+            ->get()
+            ->map(function ($row) {
+                $subtotal = round((float) $row->subtotal, 2);
+                $tax = round((float) $row->tax, 2);
+                $gross = round($subtotal + $tax, 2);
+                $commission = round((float) $row->commission_amount, 2);
+
+                return [
+                    'region_id' => (int) $row->region_id,
+                    'region_name' => $row->region_name,
+                    'region_slug' => $row->region_slug,
+                    'orders' => (int) $row->orders,
+                    'items_count' => round((float) $row->items_count, 2),
+                    'subtotal' => $subtotal,
+                    'tax' => $tax,
+                    'gross_amount' => $gross,
+                    'commission_amount' => $commission,
+                    'net_amount' => max(0, round($gross - $commission, 2)),
+                    'stripe_connect_status' => $row->stripe_connect_status,
+                    'stripe_charges_enabled' => (bool) $row->stripe_charges_enabled,
+                ];
+            })
+            ->values()
+            ->all();
+    }
+
+    protected function marketplaceTransfersByStatus(Carbon $from, Carbon $to, ?int $regionId = null): array
+    {
+        return $this->marketplaceTransfersBaseQuery($from, $to, $regionId)
+            ->select('status')
+            ->selectRaw('COUNT(*) as count')
+            ->selectRaw('SUM(gross_amount) as gross_amount')
+            ->selectRaw('SUM(commission_amount) as commission_amount')
+            ->selectRaw('SUM(transfer_amount) as transfer_amount')
+            ->groupBy('status')
+            ->orderBy('status')
+            ->get()
+            ->map(fn ($row) => [
+                'status' => $row->status,
+                'count' => (int) $row->count,
+                'gross_amount' => round((float) $row->gross_amount, 2),
+                'commission_amount' => round((float) $row->commission_amount, 2),
+                'transfer_amount' => round((float) $row->transfer_amount, 2),
+            ])
+            ->values()
+            ->all();
+    }
+
+    protected function marketplaceStripeConnectSummary(?int $regionId = null): array
+    {
+        $query = Region::query()
+            ->when($regionId, fn ($query) => $query->whereKey($regionId));
+
+        return [
+            'regions_total' => (int) (clone $query)->count(),
+            'enabled' => (int) (clone $query)->where('stripe_connect_status', 'enabled')->count(),
+            'submitted' => (int) (clone $query)->where('stripe_connect_status', 'submitted')->count(),
+            'pending_onboarding' => (int) (clone $query)->where('stripe_connect_status', 'pending_onboarding')->count(),
+            'not_started' => (int) (clone $query)->where(function ($query) {
+                $query->whereNull('stripe_account_id')
+                    ->orWhere('stripe_connect_status', 'not_started');
+            })->count(),
+            'charges_enabled' => (int) (clone $query)->where('stripe_charges_enabled', true)->count(),
+            'payouts_enabled' => (int) (clone $query)->where('stripe_payouts_enabled', true)->count(),
+            'regions_attention' => (clone $query)
+                ->where(function ($query) {
+                    $query->where('stripe_charges_enabled', false)
+                        ->orWhere('stripe_payouts_enabled', false);
+                })
+                ->ordered()
+                ->limit(10)
+                ->get(['id', 'name', 'slug', 'stripe_connect_status', 'stripe_charges_enabled', 'stripe_payouts_enabled'])
+                ->map(fn (Region $region) => [
+                    'id' => $region->id,
+                    'name' => $region->name,
+                    'slug' => $region->slug,
+                    'status' => $region->stripe_connect_status,
+                    'charges_enabled' => (bool) $region->stripe_charges_enabled,
+                    'payouts_enabled' => (bool) $region->stripe_payouts_enabled,
+                ])
+                ->values()
+                ->all(),
         ];
     }
 
@@ -309,12 +483,111 @@ class DashboardController extends Controller
             ->all();
     }
 
+    protected function marketplaceRecentOrders(Carbon $from, Carbon $to, ?int $regionId = null): array
+    {
+        return Order::query()
+            ->with('user:id,name,email')
+            ->whereBetween(DB::raw('COALESCE(paid_at, created_at)'), [$from, $to])
+            ->whereHas('items', function ($query) use ($regionId) {
+                $query->whereNotNull('metadata->regional_catalog->region_id')
+                    ->when($regionId, fn ($itemQuery) => $itemQuery->where('metadata->regional_catalog->region_id', $regionId));
+            })
+            ->latest('id')
+            ->limit(10)
+            ->get()
+            ->map(fn (Order $order) => [
+                'id' => $order->id,
+                'number' => $order->number,
+                'customer' => [
+                    'id' => $order->user?->id,
+                    'name' => $order->user?->name,
+                    'email' => $order->user?->email,
+                ],
+                'status' => $order->status,
+                'payment_status' => $order->payment_status,
+                'total' => (float) $order->total,
+                'regional_splits' => collect(data_get($order->metadata, 'regional_splits', []))
+                    ->when($regionId, fn ($splits) => $splits->where('region_id', $regionId))
+                    ->values()
+                    ->all(),
+                'created_at' => $order->created_at?->toISOString(),
+                'paid_at' => $order->paid_at?->toISOString(),
+            ])
+            ->values()
+            ->all();
+    }
+
+    protected function marketplaceRecentTransfers(Carbon $from, Carbon $to, ?int $regionId = null): array
+    {
+        return $this->marketplaceTransfersBaseQuery($from, $to, $regionId)
+            ->with('region:id,name,slug')
+            ->latest('id')
+            ->limit(10)
+            ->get()
+            ->map(fn (MarketplaceTransfer $transfer) => [
+                'id' => $transfer->id,
+                'order_id' => $transfer->order_id,
+                'region_id' => $transfer->region_id,
+                'region' => $transfer->region ? [
+                    'id' => $transfer->region->id,
+                    'name' => $transfer->region->name,
+                    'slug' => $transfer->region->slug,
+                ] : null,
+                'status' => $transfer->status,
+                'gross_amount' => (float) $transfer->gross_amount,
+                'commission_amount' => (float) $transfer->commission_amount,
+                'transfer_amount' => (float) $transfer->transfer_amount,
+                'stripe_transfer_id' => $transfer->stripe_transfer_id,
+                'failure_message' => $transfer->failure_message,
+                'transferred_at' => $transfer->transferred_at?->toISOString(),
+                'created_at' => $transfer->created_at?->toISOString(),
+            ])
+            ->values()
+            ->all();
+    }
+
     protected function paidOrders(Carbon $from, Carbon $to)
     {
         return Order::query()
             ->where('status', Order::STATUS_PAID)
             ->where('payment_status', Order::PAYMENT_PAID)
             ->whereBetween(DB::raw('COALESCE(paid_at, created_at)'), [$from, $to]);
+    }
+
+    protected function marketplaceItemsBaseQuery(Carbon $from, Carbon $to, ?int $regionId = null)
+    {
+        return OrderItem::query()
+            ->join('orders', 'orders.id', '=', 'order_items.order_id')
+            ->where('orders.status', Order::STATUS_PAID)
+            ->where('orders.payment_status', Order::PAYMENT_PAID)
+            ->whereBetween(DB::raw('COALESCE(orders.paid_at, orders.created_at)'), [$from, $to])
+            ->whereNotNull('order_items.metadata->regional_catalog->region_id')
+            ->when($regionId, fn ($query) => $query->where('order_items.metadata->regional_catalog->region_id', $regionId));
+    }
+
+    protected function marketplaceTransfersBaseQuery(Carbon $from, Carbon $to, ?int $regionId = null)
+    {
+        return MarketplaceTransfer::query()
+            ->whereBetween('created_at', [$from, $to])
+            ->when($regionId, fn ($query) => $query->where('region_id', $regionId));
+    }
+
+    protected function requestedRegionId(Request $request): ?int
+    {
+        $user = $request->user()?->loadMissing('role');
+
+        if ($user?->isRegionalAdmin()) {
+            abort_if(blank($user->region_id), 403, 'Tu usuario no tiene un centro regional asignado.');
+
+            return (int) $user->region_id;
+        }
+
+        return $request->filled('region_id') ? (int) $request->integer('region_id') : null;
+    }
+
+    protected function isRegionalAdmin(Request $request): bool
+    {
+        return (bool) $request->user()?->loadMissing('role')->isRegionalAdmin();
     }
 
     protected function salesByChannel(Carbon $from, Carbon $to): array

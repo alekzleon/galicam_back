@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Api\V1\Admin;
 
+use App\Http\Controllers\Api\V1\Admin\Concerns\AuthorizesRegionalProductAccess;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Admin\ReorderProductGalleryItemsRequest;
 use App\Http\Requests\Admin\StoreProductGalleryItemRequest;
@@ -16,8 +17,12 @@ use Illuminate\Support\Facades\Storage;
 
 class ProductGalleryItemController extends Controller
 {
+    use AuthorizesRegionalProductAccess;
+
     public function index(Request $request, Product $product): JsonResponse
     {
+        $this->ensureProductIsVisibleForRegionalAdmin($request->user(), $product);
+
         $query = $product->galleryItems()
             ->when($request->has('is_active') && $request->input('is_active') !== '', function ($query) use ($request) {
                 $isActive = filter_var($request->input('is_active'), FILTER_VALIDATE_BOOL, FILTER_NULL_ON_FAILURE);
@@ -40,6 +45,8 @@ class ProductGalleryItemController extends Controller
 
     public function store(StoreProductGalleryItemRequest $request, Product $product): JsonResponse
     {
+        $this->ensureProductIsVisibleForRegionalAdmin($request->user(), $product);
+
         $data = $request->validated();
         $file = $request->file('media');
 
@@ -65,6 +72,7 @@ class ProductGalleryItemController extends Controller
 
     public function show(Product $product, ProductGalleryItem $galleryItem): JsonResponse
     {
+        $this->ensureProductIsVisibleForRegionalAdmin(request()->user(), $product);
         $this->ensureGalleryItemBelongsToProduct($product, $galleryItem);
 
         return response()->json([
@@ -79,6 +87,7 @@ class ProductGalleryItemController extends Controller
         Product $product,
         ProductGalleryItem $galleryItem
     ): JsonResponse {
+        $this->ensureProductIsVisibleForRegionalAdmin($request->user(), $product);
         $this->ensureGalleryItemBelongsToProduct($product, $galleryItem);
 
         $data = $request->validated();
@@ -108,6 +117,7 @@ class ProductGalleryItemController extends Controller
 
     public function destroy(Product $product, ProductGalleryItem $galleryItem): JsonResponse
     {
+        $this->ensureProductIsVisibleForRegionalAdmin(request()->user(), $product);
         $this->ensureGalleryItemBelongsToProduct($product, $galleryItem);
 
         if ($galleryItem->media_path && Storage::disk($galleryItem->media_disk ?: 'public')->exists($galleryItem->media_path)) {
@@ -124,6 +134,7 @@ class ProductGalleryItemController extends Controller
 
     public function toggle(Product $product, ProductGalleryItem $galleryItem): JsonResponse
     {
+        $this->ensureProductIsVisibleForRegionalAdmin(request()->user(), $product);
         $this->ensureGalleryItemBelongsToProduct($product, $galleryItem);
 
         $galleryItem->update([
@@ -139,6 +150,8 @@ class ProductGalleryItemController extends Controller
 
     public function reorder(ReorderProductGalleryItemsRequest $request, Product $product): JsonResponse
     {
+        $this->ensureProductIsVisibleForRegionalAdmin($request->user(), $product);
+
         DB::transaction(function () use ($request, $product) {
             foreach ($request->validated('items') as $itemData) {
                 $product->galleryItems()

@@ -68,6 +68,7 @@ class OrderService
                         'folio_microsip' => $folioMicrosip,
                         'sales_channel' => $salesChannel,
                         'sales_channel_tracking' => data_get($cart->metadata, 'sales_channel_tracking', []),
+                        'regional_splits' => data_get($preview, 'regional_splits', []),
                         'dir_cli_id' => data_get($preview, 'shipping.selected_address.dir_cli_id'),
                         'document_notes' => $documentNotes,
                     ]),
@@ -104,6 +105,7 @@ class OrderService
                     'coupon' => data_get($preview, 'coupon'),
                     'loyalty' => data_get($preview, 'loyalty', []),
                     'tax_breakdown' => data_get($preview, 'totals.tax_breakdown', []),
+                    'regional_splits' => data_get($preview, 'regional_splits', []),
                 ],
             ]);
 
@@ -150,6 +152,8 @@ class OrderService
                         'taxable_base' => data_get($item, 'taxable_base'),
                         'tax' => data_get($item, 'tax'),
                         'taxes' => data_get($item, 'taxes', []),
+                        'regional_catalog' => data_get($item, 'regional_catalog'),
+                        'marketplace' => data_get($item, 'marketplace'),
                         'accounting' => data_get($item, 'accounting'),
                         'breakdown' => data_get($item, 'breakdown'),
                         'microsip_order_key' => $microsipOrderKey,

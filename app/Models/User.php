@@ -82,6 +82,7 @@ class User extends Authenticatable
         'cdfiw_formato_dev_cfdi_pv',
         'password',
         'role_id',  
+        'region_id',
         'must_change_password',
         'invited_at',
     ];
@@ -118,6 +119,7 @@ class User extends Authenticatable
             'zona_cliente_id' => 'integer',
             'cobrador_id' => 'integer',
             'vendedor_id' => 'integer',
+            'region_id' => 'integer',
             'fecha_hora_creacion' => 'datetime',
             'fecha_hora_ult_modif' => 'datetime',
         ];
@@ -126,6 +128,11 @@ class User extends Authenticatable
     public function role(): BelongsTo
     {
         return $this->belongsTo(Role::class);
+    }
+
+    public function region(): BelongsTo
+    {
+        return $this->belongsTo(Region::class);
     }
 
     public function hasRole(string $roleName): bool
@@ -153,6 +160,11 @@ class User extends Authenticatable
     public function isInternalUser(): bool
     {
         return !$this->hasRole('cliente');
+    }
+
+    public function isRegionalAdmin(): bool
+    {
+        return $this->hasRole('centro_regional_admin');
     }
 
     public function promotions()
@@ -201,6 +213,11 @@ class User extends Authenticatable
     public function orders(): HasMany
     {
         return $this->hasMany(Order::class);
+    }
+
+    public function regionProfileChangeRequests(): HasMany
+    {
+        return $this->hasMany(RegionProfileChangeRequest::class, 'requested_by');
     }
 
     public function scopeClients($query)

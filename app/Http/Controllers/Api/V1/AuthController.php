@@ -63,7 +63,7 @@ class AuthController extends BaseApiController
             return $user;
         });
 
-        $user->load(['role.modules', 'customerProfile']);
+        $user->load(['role.modules', 'region', 'customerProfile']);
 
         $token = $user->createToken(
             $request->input('device_name', 'react-web')
@@ -95,6 +95,12 @@ class AuthController extends BaseApiController
                     'name' => $user->role->name,
                     'display_name' => $user->role->display_name,
                 ],
+                'region_id' => $user->region_id,
+                'region' => $user->region ? [
+                    'id' => $user->region->id,
+                    'name' => $user->region->name,
+                    'slug' => $user->region->slug,
+                ] : null,
                 'modules' => $modules,
             ],
         ], 201);
@@ -106,7 +112,7 @@ class AuthController extends BaseApiController
         $password = $request->input('password');
 
         $user = User::query()
-            ->with(['role.modules'])
+            ->with(['role.modules', 'region'])
             ->where('email', $login)
             ->orWhere('username', $login)
             ->first();
@@ -164,6 +170,12 @@ class AuthController extends BaseApiController
                     'name' => $user->role->name,
                     'display_name' => $user->role->display_name,
                 ],
+                'region_id' => $user->region_id,
+                'region' => $user->region ? [
+                    'id' => $user->region->id,
+                    'name' => $user->region->name,
+                    'slug' => $user->region->slug,
+                ] : null,
                 'modules' => $modules,
             ],
         ]);
@@ -171,7 +183,7 @@ class AuthController extends BaseApiController
 
     public function me(Request $request): JsonResponse
     {
-        $user = $request->user()->loadMissing(['role.modules']);
+        $user = $request->user()->loadMissing(['role.modules', 'region']);
 
         if (!$user->role) {
             return response()->json([
@@ -206,6 +218,12 @@ class AuthController extends BaseApiController
                     'name' => $user->role->name,
                     'display_name' => $user->role->display_name,
                 ],
+                'region_id' => $user->region_id,
+                'region' => $user->region ? [
+                    'id' => $user->region->id,
+                    'name' => $user->region->name,
+                    'slug' => $user->region->slug,
+                ] : null,
                 'modules' => $modules,
             ],
         ]);

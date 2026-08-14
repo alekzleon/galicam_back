@@ -101,7 +101,7 @@ class RoleController extends Controller
 
     public function destroy(Role $role): JsonResponse
     {
-        if (in_array($role->name, ['super_admin', 'admin', 'sistemas', 'cliente'], true)) {
+        if (in_array($role->name, ['super_admin', 'admin', 'sistemas', 'centro_regional_admin', 'cliente'], true)) {
             return response()->json([
                 'ok' => false,
                 'message' => 'Este rol base no se puede eliminar.',

@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Api\V1\Admin;
 
+use App\Http\Controllers\Api\V1\Admin\Concerns\AuthorizesRegionalProductAccess;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Admin\ReorderProductVariantsRequest;
 use App\Http\Requests\Admin\StoreProductVariantRequest;
@@ -15,8 +16,12 @@ use Illuminate\Support\Facades\DB;
 
 class ProductVariantController extends Controller
 {
+    use AuthorizesRegionalProductAccess;
+
     public function index(Request $request, Product $product): JsonResponse
     {
+        $this->ensureProductIsVisibleForRegionalAdmin($request->user(), $product);
+
         $query = $product->variants()
             ->with('attributeValues.attribute')
             ->when($request->has('is_active') && $request->input('is_active') !== '', function ($query) use ($request) {
@@ -51,6 +56,8 @@ class ProductVariantController extends Controller
 
     public function store(StoreProductVariantRequest $request, Product $product): JsonResponse
     {
+        $this->ensureProductIsVisibleForRegionalAdmin($request->user(), $product);
+
         $data = $request->validated();
         $attributeValueIds = $data['attribute_value_ids'] ?? [];
 
@@ -80,6 +87,7 @@ class ProductVariantController extends Controller
 
     public function show(Product $product, ProductVariant $variant): JsonResponse
     {
+        $this->ensureProductIsVisibleForRegionalAdmin(request()->user(), $product);
         $this->ensureVariantBelongsToProduct($product, $variant);
 
         return response()->json([
@@ -91,6 +99,7 @@ class ProductVariantController extends Controller
 
     public function update(UpdateProductVariantRequest $request, Product $product, ProductVariant $variant): JsonResponse
     {
+        $this->ensureProductIsVisibleForRegionalAdmin($request->user(), $product);
         $this->ensureVariantBelongsToProduct($product, $variant);
 
         $data = $request->validated();
@@ -119,6 +128,7 @@ class ProductVariantController extends Controller
 
     public function destroy(Product $product, ProductVariant $variant): JsonResponse
     {
+        $this->ensureProductIsVisibleForRegionalAdmin(request()->user(), $product);
         $this->ensureVariantBelongsToProduct($product, $variant);
 
         $variant->delete();
@@ -131,6 +141,7 @@ class ProductVariantController extends Controller
 
     public function updateStatus(Request $request, Product $product, ProductVariant $variant): JsonResponse
     {
+        $this->ensureProductIsVisibleForRegionalAdmin($request->user(), $product);
         $this->ensureVariantBelongsToProduct($product, $variant);
 
         $validated = $request->validate([
@@ -150,6 +161,8 @@ class ProductVariantController extends Controller
 
     public function reorder(ReorderProductVariantsRequest $request, Product $product): JsonResponse
     {
+        $this->ensureProductIsVisibleForRegionalAdmin($request->user(), $product);
+
         DB::transaction(function () use ($request, $product) {
             foreach ($request->validated('variants') as $variantData) {
                 $product->variants()

@@ -139,7 +139,8 @@ class Product extends Model
     public function regions(): BelongsToMany
     {
         return $this->belongsToMany(Region::class, 'product_region')
-            ->withPivot('sort_order')
+            ->using(ProductRegion::class)
+            ->withPivot('is_active', 'regional_price', 'regional_stock', 'commission_rate', 'metadata', 'sort_order')
             ->withTimestamps();
     }
 
@@ -208,9 +209,17 @@ class Product extends Model
     protected function imageUrl(): Attribute
     {
         return Attribute::make(
-            get: fn () => $this->image_path
-                ? asset('storage/' . ltrim($this->image_path, '/'))
-                : null
+            get: function () {
+                if (! $this->image_path) {
+                    return null;
+                }
+
+                if (filter_var($this->image_path, FILTER_VALIDATE_URL)) {
+                    return $this->image_path;
+                }
+
+                return asset('storage/' . ltrim($this->image_path, '/'));
+            }
         );
     }
 

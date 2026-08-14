@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Api\V1\Admin;
 
+use App\Http\Controllers\Api\V1\Admin\Concerns\AuthorizesRegionalProductAccess;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Admin\StoreRegionRequest;
 use App\Http\Requests\Admin\SyncRegionProductsRequest;
@@ -14,6 +15,8 @@ use Illuminate\Support\Facades\Storage;
 
 class RegionController extends Controller
 {
+    use AuthorizesRegionalProductAccess;
+
     public function index(Request $request): JsonResponse
     {
         $perPage = (int) $request->integer('per_page', 15);
@@ -21,6 +24,9 @@ class RegionController extends Controller
 
         $query = Region::query()
             ->withCount('products')
+            ->when($regionId = $this->regionalAdminRegionId($request->user()), function ($query) use ($regionId) {
+                $query->whereKey($regionId);
+            })
             ->when($request->filled('search'), function ($query) use ($request) {
                 $search = trim((string) $request->input('search'));
 
@@ -72,22 +78,24 @@ class RegionController extends Controller
 
     public function store(StoreRegionRequest $request): JsonResponse
     {
+        $this->ensureRegionalAdminCannotMutateRegion($request->user());
+
         $data = $request->validated();
-        $productIds = $data['product_ids'] ?? [];
+        $products = $this->regionalProductsFromValidatedData($data);
 
         if ($request->hasFile('banner')) {
             $data['banner_disk'] = 'public';
             $data['banner_path'] = $request->file('banner')->store('regions', 'public');
         }
 
-        unset($data['banner'], $data['product_ids']);
+        unset($data['banner'], $data['product_ids'], $data['products']);
 
         if (! isset($data['sort_order'])) {
             $data['sort_order'] = ((int) Region::query()->max('sort_order')) + 1;
         }
 
         $region = Region::create($data);
-        $this->syncProducts($region, $productIds);
+        $this->syncProducts($region, $products);
         $this->loadOrderedProducts($region);
 
         return response()->json([
@@ -99,6 +107,7 @@ class RegionController extends Controller
 
     public function show(Region $region): JsonResponse
     {
+        $this->ensureRegionIsVisibleForRegionalAdmin(request()->user(), $region);
         $this->loadOrderedProducts($region);
 
         return response()->json([
@@ -110,6 +119,8 @@ class RegionController extends Controller
 
     public function update(UpdateRegionRequest $request, Region $region): JsonResponse
     {
+        $this->ensureRegionalAdminCannotMutateRegion($request->user());
+
         $data = $request->validated();
 
         if ($request->boolean('remove_banner')) {
@@ -124,13 +135,14 @@ class RegionController extends Controller
             $data['banner_path'] = $request->file('banner')->store('regions', 'public');
         }
 
-        $productIds = $data['product_ids'] ?? null;
-        unset($data['banner'], $data['remove_banner'], $data['product_ids']);
+        $products = $this->regionalProductsFromValidatedData($data);
+        $shouldSyncProducts = array_key_exists('product_ids', $data) || array_key_exists('products', $data);
+        unset($data['banner'], $data['remove_banner'], $data['product_ids'], $data['products']);
 
         $region->update($data);
 
-        if ($productIds !== null) {
-            $this->syncProducts($region, $productIds);
+        if ($shouldSyncProducts) {
+            $this->syncProducts($region, $products);
         }
 
         $this->loadOrderedProducts($region);
@@ -144,6 +156,8 @@ class RegionController extends Controller
 
     public function destroy(Region $region): JsonResponse
     {
+        $this->ensureRegionalAdminCannotMutateRegion(request()->user());
+
         $region->update(['is_active' => false]);
         $region->loadCount('products');
 
@@ -156,6 +170,8 @@ class RegionController extends Controller
 
     public function updateStatus(Request $request, Region $region): JsonResponse
     {
+        $this->ensureRegionalAdminCannotMutateRegion($request->user());
+
         $validated = $request->validate([
             'is_active' => ['required', 'boolean'],
         ]);
@@ -174,7 +190,10 @@ class RegionController extends Controller
 
     public function syncRegionProducts(SyncRegionProductsRequest $request, Region $region): JsonResponse
     {
-        $this->syncProducts($region, $request->validated('product_ids'));
+        $this->ensureRegionalAdminCannotMutateRegion($request->user());
+
+        $data = $request->validated();
+        $this->syncProducts($region, $this->regionalProductsFromValidatedData($data));
         $this->loadOrderedProducts($region);
 
         return response()->json([
@@ -184,18 +203,76 @@ class RegionController extends Controller
         ]);
     }
 
-    protected function syncProducts(Region $region, array $productIds): void
+    protected function syncProducts(Region $region, array $products): void
     {
-        $syncPayload = collect($productIds)
+        $syncPayload = collect($products)
             ->filter()
-            ->unique()
+            ->unique('product_id')
             ->values()
-            ->mapWithKeys(fn ($productId, $index) => [
-                (int) $productId => ['sort_order' => $index + 1],
+            ->mapWithKeys(fn ($product, $index) => [
+                (int) $product['product_id'] => [
+                    'is_active' => (bool) ($product['is_active'] ?? true),
+                    'regional_price' => $product['regional_price'] ?? null,
+                    'regional_stock' => $product['regional_stock'] ?? null,
+                    'commission_rate' => $product['commission_rate'] ?? null,
+                    'metadata' => isset($product['metadata']) ? json_encode($product['metadata']) : null,
+                    'sort_order' => (int) ($product['sort_order'] ?? ($index + 1)),
+                ],
             ])
             ->all();
 
         $region->products()->sync($syncPayload);
+    }
+
+    protected function regionalProductsFromValidatedData(array $data): array
+    {
+        if (array_key_exists('products', $data)) {
+            return collect($data['products'] ?? [])
+                ->map(fn (array $product) => [
+                    'product_id' => (int) $product['product_id'],
+                    'is_active' => $product['is_active'] ?? true,
+                    'regional_price' => array_key_exists('regional_price', $product) && $product['regional_price'] !== null
+                        ? round((float) $product['regional_price'], 2)
+                        : null,
+                    'regional_stock' => array_key_exists('regional_stock', $product) && $product['regional_stock'] !== null
+                        ? round((float) $product['regional_stock'], 2)
+                        : null,
+                    'commission_rate' => array_key_exists('commission_rate', $product) && $product['commission_rate'] !== null
+                        ? round((float) $product['commission_rate'], 2)
+                        : null,
+                    'sort_order' => $product['sort_order'] ?? null,
+                    'metadata' => $product['metadata'] ?? null,
+                ])
+                ->values()
+                ->all();
+        }
+
+        return collect($data['product_ids'] ?? [])
+            ->map(fn ($productId, $index) => [
+                'product_id' => (int) $productId,
+                'sort_order' => $index + 1,
+                'is_active' => true,
+            ])
+            ->values()
+            ->all();
+    }
+
+    protected function ensureRegionIsVisibleForRegionalAdmin($user, Region $region): void
+    {
+        $regionId = $this->regionalAdminRegionId($user);
+
+        if ($regionId === null) {
+            return;
+        }
+
+        abort_unless((int) $region->id === $regionId, 404, 'Región no encontrada para tu usuario.');
+    }
+
+    protected function ensureRegionalAdminCannotMutateRegion($user): void
+    {
+        if ($this->regionalAdminRegionId($user) !== null) {
+            abort(403, 'Los cambios del centro regional requieren autorización del administrador principal.');
+        }
     }
 
     protected function loadOrderedProducts(Region $region): void

@@ -2,7 +2,9 @@
 
 namespace App\Http\Requests\Admin;
 
+use App\Models\Role;
 use Illuminate\Foundation\Http\FormRequest;
+use Illuminate\Validation\Validator;
 use Illuminate\Validation\Rule;
 
 class StoreUserRequest extends FormRequest
@@ -29,6 +31,7 @@ class StoreUserRequest extends FormRequest
                 'integer',
                 Rule::exists('roles', 'id')->where(fn ($query) => $query->where('name', '!=', 'cliente')),
             ],
+            'region_id' => ['nullable', 'integer', 'exists:regions,id'],
             'name' => ['required', 'string', 'max:255'],
             'username' => ['required', 'string', 'max:50', 'unique:users,username'],
             'email' => ['required', 'email', 'max:255', 'unique:users,email'],
@@ -41,6 +44,7 @@ class StoreUserRequest extends FormRequest
         return [
             'role_id.required' => 'El rol es obligatorio.',
             'role_id.exists' => 'El rol seleccionado no es válido para usuarios internos.',
+            'region_id.exists' => 'El centro regional seleccionado no existe.',
             'name.required' => 'El nombre es obligatorio.',
             'username.required' => 'El usuario es obligatorio.',
             'username.unique' => 'El usuario ya está en uso.',
@@ -50,5 +54,18 @@ class StoreUserRequest extends FormRequest
             'password.required' => 'La contraseña es obligatoria.',
             'password.min' => 'La contraseña debe tener al menos 8 caracteres.',
         ];
+    }
+
+    public function withValidator(Validator $validator): void
+    {
+        $validator->after(function (Validator $validator) {
+            $roleName = Role::query()
+                ->whereKey($this->input('role_id'))
+                ->value('name');
+
+            if ($roleName === 'centro_regional_admin' && blank($this->input('region_id'))) {
+                $validator->errors()->add('region_id', 'El centro regional es obligatorio para un administrador regional.');
+            }
+        });
     }
 }

@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Api\V1\Admin;
 
+use App\Http\Controllers\Api\V1\Admin\Concerns\AuthorizesRegionalProductAccess;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Admin\ImportVariantAttributeFromCatalogRequest;
 use App\Http\Requests\Admin\StoreVariantAttributeCatalogRequest;
@@ -19,6 +20,8 @@ use Illuminate\Support\Facades\Storage;
 
 class VariantAttributeController extends Controller
 {
+    use AuthorizesRegionalProductAccess;
+
     public function catalog(Request $request): JsonResponse
     {
         $userId = $request->user()?->id;
@@ -143,6 +146,8 @@ class VariantAttributeController extends Controller
 
     public function index(Request $request, Product $product): JsonResponse
     {
+        $this->ensureProductIsVisibleForRegionalAdmin($request->user(), $product);
+
         $query = $product->variantAttributes()
             ->with('values')
             ->when($request->filled('search'), function ($query) use ($request) {
@@ -171,6 +176,8 @@ class VariantAttributeController extends Controller
 
     public function store(StoreVariantAttributeRequest $request, Product $product): JsonResponse
     {
+        $this->ensureProductIsVisibleForRegionalAdmin($request->user(), $product);
+
         $attribute = $product->variantAttributes()->create([
             ...$request->validated(),
             'user_id' => $request->user()?->id,
@@ -188,6 +195,8 @@ class VariantAttributeController extends Controller
         ImportVariantAttributeFromCatalogRequest $request,
         Product $product
     ): JsonResponse {
+        $this->ensureProductIsVisibleForRegionalAdmin($request->user(), $product);
+
         $data = $request->validated();
         $sourceAttribute = VariantAttribute::query()
             ->catalog()
@@ -240,6 +249,7 @@ class VariantAttributeController extends Controller
 
     public function show(Product $product, VariantAttribute $variantAttribute): JsonResponse
     {
+        $this->ensureProductIsVisibleForRegionalAdmin(request()->user(), $product);
         $this->ensureAttributeBelongsToProduct($product, $variantAttribute);
 
         return response()->json([
@@ -254,6 +264,7 @@ class VariantAttributeController extends Controller
         Product $product,
         VariantAttribute $variantAttribute
     ): JsonResponse {
+        $this->ensureProductIsVisibleForRegionalAdmin($request->user(), $product);
         $this->ensureAttributeBelongsToProduct($product, $variantAttribute);
 
         $variantAttribute->update($request->validated());
@@ -267,6 +278,7 @@ class VariantAttributeController extends Controller
 
     public function destroy(Product $product, VariantAttribute $variantAttribute): JsonResponse
     {
+        $this->ensureProductIsVisibleForRegionalAdmin(request()->user(), $product);
         $this->ensureAttributeBelongsToProduct($product, $variantAttribute);
 
         $result = DB::transaction(function () use ($product, $variantAttribute) {
@@ -316,6 +328,7 @@ class VariantAttributeController extends Controller
 
     public function toggle(Product $product, VariantAttribute $variantAttribute): JsonResponse
     {
+        $this->ensureProductIsVisibleForRegionalAdmin(request()->user(), $product);
         $this->ensureAttributeBelongsToProduct($product, $variantAttribute);
 
         $variantAttribute->update([

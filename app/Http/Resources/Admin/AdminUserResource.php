@@ -12,6 +12,7 @@ class AdminUserResource extends JsonResource
         return [
             'id' => $this->id,
             'role_id' => $this->role_id,
+            'region_id' => $this->region_id,
             'name' => $this->name,
             'username' => $this->username,
             'email' => $this->email,
@@ -24,6 +25,14 @@ class AdminUserResource extends JsonResource
                     'display_name' => $this->role->display_name,
                     'description' => $this->role->description,
                     'is_active' => (bool) $this->role->is_active,
+                ] : null;
+            }),
+            'region' => $this->whenLoaded('region', function () {
+                return $this->region ? [
+                    'id' => $this->region->id,
+                    'name' => $this->region->name,
+                    'slug' => $this->region->slug,
+                    'is_active' => (bool) $this->region->is_active,
                 ] : null;
             }),
             'created_at' => $this->created_at?->toDateTimeString(),

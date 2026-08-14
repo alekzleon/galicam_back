@@ -48,6 +48,8 @@ use App\Http\Controllers\Api\V1\Admin\CouponController as AdminCouponController;
 use App\Http\Controllers\Api\V1\Admin\MarketingController;
 use App\Http\Controllers\Api\V1\Admin\PromotionController;
 use App\Http\Controllers\Api\V1\Admin\RegionController as AdminRegionController;
+use App\Http\Controllers\Api\V1\Admin\RegionProfileChangeRequestController;
+use App\Http\Controllers\Api\V1\Admin\RegionStripeConnectController;
 use App\Http\Controllers\Api\V1\Admin\LogController;
 use App\Http\Controllers\Api\V1\Admin\SyncController;
 use App\Http\Controllers\Api\V1\Admin\SettingController;
@@ -110,6 +112,9 @@ Route::prefix('v1')->group(function () {
     Route::get('/monthly-promotions', [MonthlyPromotionController::class, 'index']);
     Route::get('/settings', [SiteSettingController::class, 'show']);
     Route::get('/storefront', [HomeController::class, 'storefront']);
+    Route::get('/home/sections', [HomeController::class, 'sections']);
+    Route::get('/home/new-products', [HomeController::class, 'newProducts']);
+    Route::get('/home/popular-searches', [HomeController::class, 'popularSearches']);
     Route::get('/home', [HomeController::class, 'home']);
     Route::get('/ecommerce-settings/nav-title', [EcommerceSettingController::class, 'navTitle']);
     Route::get('/ecommerce-settings/general-logo', [EcommerceSettingController::class, 'generalLogo']);
@@ -282,6 +287,8 @@ Route::prefix('v1')->group(function () {
                     ->middleware('module:dashboard');
                 Route::get('/dashboard/sales-channels', [DashboardController::class, 'salesChannels'])
                     ->middleware('module:dashboard');
+                Route::get('/dashboard/marketplace', [DashboardController::class, 'marketplace'])
+                    ->middleware('module:dashboard');
 
                 Route::get('/navigation/menu', [AdminNavigationController::class, 'menu']);
 
@@ -424,6 +431,33 @@ Route::prefix('v1')->group(function () {
                 Route::patch('regions/{region}/products', [AdminRegionController::class, 'syncRegionProducts'])
                     ->middleware('module:regiones');
 
+                Route::get('region-profile-change-requests', [RegionProfileChangeRequestController::class, 'index'])
+                    ->middleware('module:regiones');
+
+                Route::get('region-profile-change-requests/{changeRequest}', [RegionProfileChangeRequestController::class, 'show'])
+                    ->middleware('module:regiones');
+
+                Route::post('regions/{region}/profile-change-requests', [RegionProfileChangeRequestController::class, 'store'])
+                    ->middleware('module:regiones');
+
+                Route::post('region-profile-change-requests/{changeRequest}/approve', [RegionProfileChangeRequestController::class, 'approve'])
+                    ->middleware(['module:regiones', 'admin_or_super_admin']);
+
+                Route::post('region-profile-change-requests/{changeRequest}/reject', [RegionProfileChangeRequestController::class, 'reject'])
+                    ->middleware(['module:regiones', 'admin_or_super_admin']);
+
+                Route::delete('region-profile-change-requests/{changeRequest}', [RegionProfileChangeRequestController::class, 'cancel'])
+                    ->middleware('module:regiones');
+
+                Route::get('regions/{region}/stripe-connect', [RegionStripeConnectController::class, 'show'])
+                    ->middleware('module:regiones');
+
+                Route::post('regions/{region}/stripe-connect/onboarding-link', [RegionStripeConnectController::class, 'onboardingLink'])
+                    ->middleware('module:regiones');
+
+                Route::post('regions/{region}/stripe-connect/sync', [RegionStripeConnectController::class, 'sync'])
+                    ->middleware('module:regiones');
+
                 Route::get('products', [AdProductController::class, 'index'])
                     ->middleware('module:productos');
 
@@ -455,6 +489,9 @@ Route::prefix('v1')->group(function () {
                     ->middleware('module:productos');
 
                 Route::patch('products/{product}/status', [AdProductController::class, 'updateStatus'])
+                    ->middleware('module:productos');
+
+                Route::patch('products/{product}/regional-catalog', [AdProductController::class, 'updateRegionalCatalog'])
                     ->middleware('module:productos');
 
                 Route::get('products/{product}/price-scales', [ProductPriceScaleController::class, 'show'])

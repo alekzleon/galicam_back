@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\Admin\StoreUserRequest;
 use App\Http\Requests\Admin\UpdateUserRequest;
 use App\Http\Resources\Admin\AdminUserResource;
+use App\Models\Region;
 use App\Models\Role;
 use App\Models\User;
 use Illuminate\Http\JsonResponse;
@@ -21,7 +22,7 @@ class UserController extends Controller
         $sortBy = $request->string('sort_by', 'latest')->toString();
 
         $query = User::query()
-            ->with('role')
+            ->with(['role', 'region'])
             ->where(function ($query) {
                 $query->whereNull('role_id')
                     ->orWhereHas('role', fn ($roleQuery) => $roleQuery->where('name', '!=', 'cliente'));
@@ -41,6 +42,9 @@ class UserController extends Controller
             })
             ->when($request->filled('role_id'), function ($query) use ($request) {
                 $query->where('role_id', (int) $request->integer('role_id'));
+            })
+            ->when($request->filled('region_id'), function ($query) use ($request) {
+                $query->where('region_id', (int) $request->integer('region_id'));
             })
             ->when($request->has('role_is_active') && $request->input('role_is_active') !== '', function ($query) use ($request) {
                 $isActive = filter_var($request->input('role_is_active'), FILTER_VALIDATE_BOOL, FILTER_NULL_ON_FAILURE);
@@ -90,13 +94,14 @@ class UserController extends Controller
 
         $user = User::create([
             'role_id' => $data['role_id'],
+            'region_id' => $data['region_id'] ?? null,
             'name' => $data['name'],
             'username' => $data['username'],
             'email' => $data['email'],
             'password' => Hash::make($data['password']),
         ]);
 
-        $user->load('role');
+        $user->load(['role', 'region']);
 
         return response()->json([
             'ok' => true,
@@ -114,7 +119,7 @@ class UserController extends Controller
             ], 404);
         }
 
-        $user->load('role');
+        $user->load(['role', 'region']);
 
         return response()->json([
             'ok' => true,
@@ -143,8 +148,12 @@ class UserController extends Controller
             $userData['password'] = Hash::make($data['password']);
         }
 
+        if (array_key_exists('region_id', $data)) {
+            $userData['region_id'] = $data['region_id'];
+        }
+
         $user->update($userData);
-        $user->load('role');
+        $user->load(['role', 'region']);
 
         return response()->json([
             'ok' => true,
@@ -193,10 +202,23 @@ class UserController extends Controller
             ])
             ->values();
 
+        $regions = Region::query()
+            ->active()
+            ->ordered()
+            ->get(['id', 'name', 'slug', 'is_active'])
+            ->map(fn (Region $region) => [
+                'id' => $region->id,
+                'name' => $region->name,
+                'slug' => $region->slug,
+                'is_active' => (bool) $region->is_active,
+            ])
+            ->values();
+
         return response()->json([
             'ok' => true,
             'data' => [
                 'roles' => $roles,
+                'regions' => $regions,
                 'sort_options' => [
                     ['value' => 'latest', 'label' => 'Más recientes'],
                     ['value' => 'oldest', 'label' => 'Más antiguos'],

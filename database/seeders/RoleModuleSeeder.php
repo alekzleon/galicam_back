@@ -95,6 +95,12 @@ class RoleModuleSeeder extends Seeder
                 'credito',
                 'cobranza',
             ],
+            'centro_regional_admin' => [
+                'dashboard',
+                'productos',
+                'regiones',
+                'pedidos',
+            ],
             'cliente' => [
                 'front_ecommerce',
             ],

@@ -102,6 +102,22 @@ class AdminProductResource extends JsonResource
                 ];
             }),
 
+            'region_ids' => $this->whenLoaded('regions', fn () => $this->regions->pluck('id')->values()),
+            'regions' => $this->whenLoaded('regions', fn () => $this->regions
+                ->map(fn ($region) => [
+                    'id' => $region->id,
+                    'name' => $region->name,
+                    'slug' => $region->slug,
+                    'is_active' => (bool) $region->is_active,
+                    'catalog_is_active' => (bool) ($region->pivot?->is_active ?? true),
+                    'regional_price' => $region->pivot?->regional_price !== null ? (float) $region->pivot->regional_price : null,
+                    'regional_stock' => $region->pivot?->regional_stock !== null ? (float) $region->pivot->regional_stock : null,
+                    'commission_rate' => $region->pivot?->commission_rate !== null ? (float) $region->pivot->commission_rate : null,
+                    'metadata' => $region->pivot?->metadata,
+                    'sort_order' => (int) ($region->pivot?->sort_order ?? 0),
+                ])
+                ->values()),
+
             'gallery' => $this->whenLoaded('galleryItems', function () {
                 return AdminProductGalleryItemResource::collection($this->galleryItems);
             }),

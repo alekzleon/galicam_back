@@ -16,6 +16,7 @@ use App\Models\SiteSetting;
 use App\Support\Currency;
 use App\Support\Localization;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
 
 class HomeController extends Controller
@@ -60,6 +61,57 @@ class HomeController extends Controller
             'meta' => [
                 'locale' => Localization::currentLocale(request()),
                 'currency' => Currency::currentCurrency(request()),
+            ],
+        ]);
+    }
+
+    public function sections(Request $request): JsonResponse
+    {
+        $newProductsLimit = $this->boundedLimit($request, 'new_products_limit', 10, 1, 24);
+        $termsLimit = $this->boundedLimit($request, 'terms_limit', 6, 1, 12);
+        $productsLimit = $this->boundedLimit($request, 'products_limit', 4, 1, 12);
+
+        return response()->json([
+            'ok' => true,
+            'data' => [
+                'new_products' => $this->newProductsPayload($request, $newProductsLimit),
+                'popular_searches' => $this->popularSearchesPayload($request, $termsLimit, $productsLimit),
+            ],
+            'meta' => [
+                'locale' => Localization::currentLocale($request),
+                'currency' => Currency::currentCurrency($request),
+            ],
+        ]);
+    }
+
+    public function newProducts(Request $request): JsonResponse
+    {
+        $limit = $this->boundedLimit($request, 'limit', 10, 1, 24);
+
+        return response()->json([
+            'ok' => true,
+            'data' => $this->newProductsPayload($request, $limit),
+            'meta' => [
+                'locale' => Localization::currentLocale($request),
+                'currency' => Currency::currentCurrency($request),
+                'limit' => $limit,
+            ],
+        ]);
+    }
+
+    public function popularSearches(Request $request): JsonResponse
+    {
+        $termsLimit = $this->boundedLimit($request, 'limit', 6, 1, 12);
+        $productsLimit = $this->boundedLimit($request, 'products_limit', 4, 1, 12);
+
+        return response()->json([
+            'ok' => true,
+            'data' => $this->popularSearchesPayload($request, $termsLimit, $productsLimit),
+            'meta' => [
+                'locale' => Localization::currentLocale($request),
+                'currency' => Currency::currentCurrency($request),
+                'limit' => $termsLimit,
+                'products_limit' => $productsLimit,
             ],
         ]);
     }
@@ -242,5 +294,89 @@ class HomeController extends Controller
             ])
             ->values()
             ->all();
+    }
+
+    protected function newProductsPayload(Request $request, int $limit): array
+    {
+        return $this->homeProductQuery()
+            ->orderByDesc('products.created_at')
+            ->orderByDesc('products.id')
+            ->limit($limit)
+            ->get()
+            ->map(fn (Product $product) => $this->compactProductPayload($product, $request))
+            ->values()
+            ->all();
+    }
+
+    protected function popularSearchesPayload(Request $request, int $termsLimit, int $productsLimit): array
+    {
+        $locale = Localization::currentLocale($request);
+
+        $categories = Category::query()
+            ->where('is_active', true)
+            ->withCount(['products' => fn ($query) => $query->where('products.is_active', true)])
+            ->having('products_count', '>', 0)
+            ->orderByDesc('products_count')
+            ->orderBy('name')
+            ->limit($termsLimit)
+            ->get(['id', 'grupo_linea_id', 'name', 'slug', 'translations']);
+
+        $terms = $categories
+            ->map(fn (Category $category) => [
+                'label' => Localization::translate($category->translations, 'name', $category->name, $locale),
+                'value' => $category->slug,
+            ])
+            ->values()
+            ->all();
+
+        $products = $this->homeProductQuery()
+            ->when($categories->isNotEmpty(), fn ($query) => $query->whereIn('category_id', $categories->pluck('id')))
+            ->orderByDesc('products.id')
+            ->limit($productsLimit)
+            ->get()
+            ->map(fn (Product $product) => array_merge(
+                $this->compactProductPayload($product, $request),
+                ['is_favorite' => false]
+            ))
+            ->values()
+            ->all();
+
+        return [
+            'terms' => $terms,
+            'products' => $products,
+        ];
+    }
+
+    protected function compactProductPayload(Product $product, Request $request): array
+    {
+        $locale = Localization::currentLocale($request);
+        $currency = Currency::currentCurrency($request);
+        $price = Currency::money((float) $product->default_price, $currency);
+
+        return [
+            'id' => $product->id,
+            'name' => Localization::translate($product->translations, 'name', $product->name, $locale),
+            'slug' => $product->slug,
+            'price' => (float) data_get($price, 'amount', (float) $product->default_price),
+            'currency' => $currency,
+            'image_url' => $product->image_url,
+            'category' => $product->category ? [
+                'id' => $product->category->grupo_linea_id ?? $product->category->id,
+                'name' => Localization::translate($product->category->translations, 'name', $product->category->name, $locale),
+                'slug' => $product->category->slug,
+            ] : null,
+        ];
+    }
+
+    protected function homeProductQuery()
+    {
+        return Product::query()
+            ->with('category:id,grupo_linea_id,name,slug,translations')
+            ->where('products.is_active', true);
+    }
+
+    protected function boundedLimit(Request $request, string $key, int $default, int $min, int $max): int
+    {
+        return max($min, min((int) $request->integer($key, $default), $max));
     }
 }

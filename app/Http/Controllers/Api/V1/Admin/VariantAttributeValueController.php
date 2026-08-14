@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Api\V1\Admin;
 
+use App\Http\Controllers\Api\V1\Admin\Concerns\AuthorizesRegionalProductAccess;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Admin\StoreVariantAttributeValueRequest;
 use App\Http\Requests\Admin\UpdateVariantAttributeValueRequest;
@@ -15,6 +16,8 @@ use Illuminate\Support\Facades\Storage;
 
 class VariantAttributeValueController extends Controller
 {
+    use AuthorizesRegionalProductAccess;
+
     public function indexCatalog(Request $request, VariantAttribute $variantAttribute): JsonResponse
     {
         $this->ensureCatalogAttributeIsVisible($request, $variantAttribute);
@@ -118,6 +121,7 @@ class VariantAttributeValueController extends Controller
         Product $product,
         VariantAttribute $variantAttribute
     ): JsonResponse {
+        $this->ensureProductIsVisibleForRegionalAdmin($request->user(), $product);
         $this->ensureAttributeBelongsToProduct($product, $variantAttribute);
 
         $value = $variantAttribute->values()->create($this->valuePayload($request, $variantAttribute));
@@ -135,6 +139,7 @@ class VariantAttributeValueController extends Controller
         VariantAttribute $variantAttribute,
         VariantAttributeValue $attributeValue
     ): JsonResponse {
+        $this->ensureProductIsVisibleForRegionalAdmin($request->user(), $product);
         $this->ensureAttributeBelongsToProduct($product, $variantAttribute);
         $this->ensureValueBelongsToAttribute($variantAttribute, $attributeValue);
 
@@ -152,6 +157,7 @@ class VariantAttributeValueController extends Controller
         VariantAttribute $variantAttribute,
         VariantAttributeValue $attributeValue
     ): JsonResponse {
+        $this->ensureProductIsVisibleForRegionalAdmin(request()->user(), $product);
         $this->ensureAttributeBelongsToProduct($product, $variantAttribute);
         $this->ensureValueBelongsToAttribute($variantAttribute, $attributeValue);
 
@@ -170,6 +176,7 @@ class VariantAttributeValueController extends Controller
         VariantAttribute $variantAttribute,
         VariantAttributeValue $attributeValue
     ): JsonResponse {
+        $this->ensureProductIsVisibleForRegionalAdmin(request()->user(), $product);
         $this->ensureAttributeBelongsToProduct($product, $variantAttribute);
         $this->ensureValueBelongsToAttribute($variantAttribute, $attributeValue);
 

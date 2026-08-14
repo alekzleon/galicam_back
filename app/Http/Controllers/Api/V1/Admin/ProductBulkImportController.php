@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Api\V1\Admin;
 
+use App\Http\Controllers\Api\V1\Admin\Concerns\AuthorizesRegionalProductAccess;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Admin\ImportProductsRequest;
 use App\Services\ProductBulkImportService;
@@ -10,6 +11,8 @@ use Symfony\Component\HttpFoundation\BinaryFileResponse;
 
 class ProductBulkImportController extends Controller
 {
+    use AuthorizesRegionalProductAccess;
+
     public function __construct(protected ProductBulkImportService $productBulkImportService)
     {
     }
@@ -27,6 +30,12 @@ class ProductBulkImportController extends Controller
 
     public function preview(ImportProductsRequest $request): JsonResponse
     {
+        abort_if(
+            $this->regionalAdminRegionId($request->user()) !== null,
+            403,
+            'La carga masiva de productos solo está disponible para administradores principales.'
+        );
+
         $result = $this->productBulkImportService->preview(
             file: $request->file('file'),
             mode: $request->input('mode', 'create_or_update')
@@ -41,6 +50,12 @@ class ProductBulkImportController extends Controller
 
     public function import(ImportProductsRequest $request): JsonResponse
     {
+        abort_if(
+            $this->regionalAdminRegionId($request->user()) !== null,
+            403,
+            'La carga masiva de productos solo está disponible para administradores principales.'
+        );
+
         $result = $this->productBulkImportService->import(
             file: $request->file('file'),
             mode: $request->input('mode', 'create_or_update'),

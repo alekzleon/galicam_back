@@ -76,9 +76,15 @@ class CartService
         ]);
     }
 
-    public function addItem(User $user, Product $product, float $quantity = 1, array $attributeValueIds = []): Cart
+    public function addItem(
+        User $user,
+        Product $product,
+        float $quantity = 1,
+        array $attributeValueIds = [],
+        ?array $regionalCatalog = null
+    ): Cart
     {
-        return DB::transaction(function () use ($user, $product, $quantity, $attributeValueIds) {
+        return DB::transaction(function () use ($user, $product, $quantity, $attributeValueIds, $regionalCatalog) {
             $cart = $this->getOrCreateActiveCart($user);
 
             $quantity = round((float) $quantity, 2);
@@ -89,13 +95,15 @@ class CartService
 
             $selectedAttributes = $this->selectedAttributesForProduct($product, $attributeValueIds);
             $selectionKey = $this->selectedAttributesKey($selectedAttributes);
+            $regionalKey = $regionalCatalog ? (string) data_get($regionalCatalog, 'region_id') : '';
 
             $item = CartItem::query()
                 ->where('cart_id', $cart->id)
                 ->where('product_id', $product->id)
                 ->where('status', CartItemStatus::ACTIVE->value)
                 ->get()
-                ->first(fn (CartItem $item) => data_get($item->metadata, 'selected_attributes_key', '') === $selectionKey);
+                ->first(fn (CartItem $item) => data_get($item->metadata, 'selected_attributes_key', '') === $selectionKey
+                    && (string) data_get($item->metadata, 'regional_catalog.region_id', '') === $regionalKey);
 
             if ($item) {
                 $item->quantity = round((float) $item->quantity + $quantity, 2);
@@ -108,10 +116,14 @@ class CartService
                 ]);
             }
 
-            $requestedProductQuantity = $this->requestedProductQuantity($cart, $product, $item);
-            $this->abortIfInsufficientStock($product, $requestedProductQuantity);
+            if (data_get($regionalCatalog, 'stock') !== null) {
+                $this->abortIfInsufficientRegionalStock($regionalCatalog, $this->requestedRegionalProductQuantity($cart, $product, $regionalCatalog, $item));
+            } else {
+                $requestedProductQuantity = $this->requestedProductQuantity($cart, $product, $item);
+                $this->abortIfInsufficientStock($product, $requestedProductQuantity);
+            }
 
-            $this->fillItemSnapshot($item, $product, $user, selectedAttributes: $selectedAttributes);
+            $this->fillItemSnapshot($item, $product, $user, selectedAttributes: $selectedAttributes, regionalCatalog: $regionalCatalog);
 
             $item->base_unit_price_snapshot = round((float) $item->price_snapshot, 2);
             $item->final_unit_price_snapshot = round((float) $item->price_snapshot, 2);
@@ -137,6 +149,7 @@ class CartService
                     'quantity' => $quantity,
                     'final_quantity' => $item->quantity,
                     'selected_attributes' => $selectedAttributes,
+                    'regional_catalog' => $regionalCatalog,
                 ]
             );
 
@@ -166,8 +179,15 @@ class CartService
             }
 
             if ($item->product) {
-                $requestedProductQuantity = $this->requestedProductQuantity($cart, $item->product, $item, $quantity);
-                $this->abortIfInsufficientStock($item->product, $requestedProductQuantity);
+                $regionalCatalog = data_get($item->metadata, 'regional_catalog');
+
+                if (data_get($regionalCatalog, 'stock') !== null) {
+                    $requestedRegionalQuantity = $this->requestedRegionalProductQuantity($cart, $item->product, $regionalCatalog, $item, $quantity);
+                    $this->abortIfInsufficientRegionalStock($regionalCatalog, $requestedRegionalQuantity);
+                } else {
+                    $requestedProductQuantity = $this->requestedProductQuantity($cart, $item->product, $item, $quantity);
+                    $this->abortIfInsufficientStock($item->product, $requestedProductQuantity);
+                }
             }
 
             $item->quantity = $quantity;
@@ -478,6 +498,12 @@ class CartService
             'items.product.category',
             'items.product.family',
         ]);
+        $this->refreshMarketplaceSnapshots($cart);
+        $cart->load([
+            'user',
+            'items.product.category',
+            'items.product.family',
+        ]);
         $this->refreshItemStockSnapshots($cart);
         $cart->load([
             'user',
@@ -569,9 +595,17 @@ class CartService
         Product $product,
         ?User $user = null,
         ?array $pricePayload = null,
-        ?array $selectedAttributes = null
+        ?array $selectedAttributes = null,
+        ?array $regionalCatalog = null
     ): void {
+        $regionalCatalog ??= data_get($item->metadata, 'regional_catalog');
         $pricePayload ??= $this->productPriceService->priceForProduct($product, $user);
+
+        if ($regionalCatalog && data_get($regionalCatalog, 'price') !== null) {
+            $pricePayload['price'] = round((float) data_get($regionalCatalog, 'price'), 2);
+            $pricePayload['source'] = 'product_region.regional_price';
+        }
+
         $price = (float) $pricePayload['price'];
 
         $item->sku_snapshot = $product->sku;
@@ -588,6 +622,18 @@ class CartService
             'is_default_price_list' => $pricePayload['is_default_price_list'],
             'source' => $pricePayload['source'],
         ];
+
+        if ($regionalCatalog) {
+            $metadata['regional_catalog'] = [
+                'region_id' => (int) data_get($regionalCatalog, 'region_id'),
+                'region_name' => data_get($regionalCatalog, 'region_name'),
+                'region_slug' => data_get($regionalCatalog, 'region_slug'),
+                'price' => data_get($regionalCatalog, 'price') !== null ? round((float) data_get($regionalCatalog, 'price'), 2) : null,
+                'stock' => data_get($regionalCatalog, 'stock') !== null ? round((float) data_get($regionalCatalog, 'stock'), 2) : null,
+                'commission_rate' => data_get($regionalCatalog, 'commission_rate') !== null ? round((float) data_get($regionalCatalog, 'commission_rate'), 2) : null,
+                'metadata' => data_get($regionalCatalog, 'metadata'),
+            ];
+        }
 
         if ($selectedAttributes !== null) {
             $metadata['selected_attributes'] = $selectedAttributes;
@@ -632,6 +678,35 @@ class CartService
         }
     }
 
+    protected function refreshMarketplaceSnapshots(Cart $cart): void
+    {
+        foreach ($cart->items as $item) {
+            $regionalCatalog = data_get($item->metadata, 'regional_catalog');
+
+            if (! $regionalCatalog) {
+                continue;
+            }
+
+            $commissionRate = data_get($regionalCatalog, 'commission_rate');
+            $commissionRate = $commissionRate !== null ? round((float) $commissionRate, 2) : 0.0;
+            $lineTotal = round((float) $item->line_subtotal_snapshot, 2);
+            $commissionAmount = round($lineTotal * ($commissionRate / 100), 2);
+            $metadata = $item->metadata ?? [];
+            $metadata['marketplace'] = [
+                'region_id' => (int) data_get($regionalCatalog, 'region_id'),
+                'region_name' => data_get($regionalCatalog, 'region_name'),
+                'region_slug' => data_get($regionalCatalog, 'region_slug'),
+                'commission_rate' => $commissionRate,
+                'commission_amount' => $commissionAmount,
+                'net_amount' => max(0, round($lineTotal - $commissionAmount, 2)),
+                'line_total' => $lineTotal,
+            ];
+
+            $item->metadata = $metadata;
+            $item->save();
+        }
+    }
+
     protected function abortIfInsufficientStock(Product $product, float $quantity): void
     {
         if ($product->stock === null) {
@@ -640,6 +715,18 @@ class CartService
 
         abort_if((float) $product->stock <= 0, 422, 'Producto sin inventario disponible.');
         abort_if((float) $product->stock < $quantity, 422, "Solo hay {$product->stock} pieza(s) disponibles.");
+    }
+
+    protected function abortIfInsufficientRegionalStock(?array $regionalCatalog, float $quantity): void
+    {
+        $stock = data_get($regionalCatalog, 'stock');
+
+        if ($stock === null) {
+            return;
+        }
+
+        abort_if((float) $stock <= 0, 422, 'Producto sin inventario disponible en el centro regional seleccionado.');
+        abort_if((float) $stock < $quantity, 422, "Solo hay {$stock} pieza(s) disponibles en el centro regional seleccionado.");
     }
 
     protected function requestedProductQuantity(
@@ -655,6 +742,31 @@ class CartService
             ->where('status', CartItemStatus::ACTIVE->value)
             ->when($currentItem?->exists, fn ($query) => $query->whereKeyNot($currentItem->id))
             ->sum('quantity');
+
+        return round((float) $otherQuantity + (float) $currentQuantity, 2);
+    }
+
+    protected function requestedRegionalProductQuantity(
+        Cart $cart,
+        Product $product,
+        ?array $regionalCatalog,
+        ?CartItem $currentItem = null,
+        ?float $currentQuantity = null
+    ): float {
+        $regionId = data_get($regionalCatalog, 'region_id');
+
+        if (! $regionId) {
+            return 0;
+        }
+
+        $currentQuantity ??= $currentItem ? (float) $currentItem->quantity : 0;
+
+        $otherQuantity = $cart->items
+            ->filter(fn (CartItem $item) => (int) $item->product_id === (int) $product->id)
+            ->filter(fn (CartItem $item) => $item->status === CartItemStatus::ACTIVE->value)
+            ->filter(fn (CartItem $item) => (int) data_get($item->metadata, 'regional_catalog.region_id') === (int) $regionId)
+            ->reject(fn (CartItem $item) => $currentItem?->exists && (int) $item->id === (int) $currentItem->id)
+            ->sum(fn (CartItem $item) => (float) $item->quantity);
 
         return round((float) $otherQuantity + (float) $currentQuantity, 2);
     }
@@ -709,8 +821,9 @@ class CartService
 
     protected function applyStockSnapshot(CartItem $item): void
     {
-        $stock = $item->product?->stock;
         $metadata = $item->metadata ?? [];
+        $stock = data_get($metadata, 'regional_catalog.stock');
+        $stock = $stock !== null ? $stock : $item->product?->stock;
 
         if ($stock === null) {
             $metadata['stock'] = [

@@ -42,6 +42,12 @@ class RoleSeeder extends Seeder
                 'is_active' => true,
             ],
             [
+                'name' => 'centro_regional_admin',
+                'display_name' => 'Centro Regional Admin',
+                'description' => 'Administración limitada a los productos y datos de su centro regional',
+                'is_active' => true,
+            ],
+            [
                 'name' => 'cliente',
                 'display_name' => 'Cliente',
                 'description' => 'Usuario comprador del ecommerce',

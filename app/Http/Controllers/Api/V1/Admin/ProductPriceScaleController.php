@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api\V1\Admin;
 
 use App\Enums\PromotionType;
+use App\Http\Controllers\Api\V1\Admin\Concerns\AuthorizesRegionalProductAccess;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Admin\UpdateProductPriceScalesRequest;
 use App\Models\Product;
@@ -12,8 +13,12 @@ use Illuminate\Support\Str;
 
 class ProductPriceScaleController extends Controller
 {
+    use AuthorizesRegionalProductAccess;
+
     public function show(Product $product): JsonResponse
     {
+        $this->ensureProductIsVisibleForRegionalAdmin(request()->user(), $product);
+
         return response()->json([
             'ok' => true,
             'data' => $this->payload($product),
@@ -22,6 +27,8 @@ class ProductPriceScaleController extends Controller
 
     public function update(UpdateProductPriceScalesRequest $request, Product $product): JsonResponse
     {
+        $this->ensureProductIsVisibleForRegionalAdmin($request->user(), $product);
+
         $promotion = $this->promotionForProduct($product);
         $validated = $request->validated();
 
@@ -52,6 +59,8 @@ class ProductPriceScaleController extends Controller
 
     public function destroy(Product $product): JsonResponse
     {
+        $this->ensureProductIsVisibleForRegionalAdmin(request()->user(), $product);
+
         $promotion = $this->existingPromotionForProduct($product);
 
         if ($promotion) {

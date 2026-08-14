@@ -69,6 +69,14 @@ class UpdateRegionRequest extends FormRequest
             'metadata' => ['sometimes', 'nullable', 'array'],
             'product_ids' => ['sometimes', 'nullable', 'array'],
             'product_ids.*' => ['integer', 'exists:products,id'],
+            'products' => ['sometimes', 'nullable', 'array'],
+            'products.*.product_id' => ['required', 'integer', 'exists:products,id'],
+            'products.*.is_active' => ['sometimes', 'boolean'],
+            'products.*.regional_price' => ['sometimes', 'nullable', 'numeric', 'min:0'],
+            'products.*.regional_stock' => ['sometimes', 'nullable', 'numeric', 'min:0'],
+            'products.*.commission_rate' => ['sometimes', 'nullable', 'numeric', 'min:0', 'max:100'],
+            'products.*.sort_order' => ['sometimes', 'nullable', 'integer', 'min:0'],
+            'products.*.metadata' => ['sometimes', 'nullable', 'array'],
         ];
     }
 }

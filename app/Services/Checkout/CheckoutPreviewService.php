@@ -40,6 +40,7 @@ class CheckoutPreviewService
             'shipping' => $shipping,
             'items_count' => (float) $cart->items_count,
             'items' => $checkoutItems,
+            'regional_splits' => $this->regionalSplits($checkoutItems),
             'promotions_applied' => $this->buildPromotionsApplied($items),
             'coupon' => data_get($cart->metadata, 'coupon'),
             'loyalty' => data_get($cart->metadata, 'loyalty', [
@@ -190,6 +191,8 @@ class CheckoutPreviewService
             'family' => $item->family_snapshot,
             'selected_attribute_value_ids' => data_get($item->metadata, 'selected_attribute_value_ids', []),
             'selected_attributes' => data_get($item->metadata, 'selected_attributes', []),
+            'regional_catalog' => data_get($item->metadata, 'regional_catalog'),
+            'marketplace' => data_get($item->metadata, 'marketplace'),
             'quantity' => $quantity,
             'unit_price' => $baseUnitPrice,
             'price_info' => [
@@ -243,7 +246,8 @@ class CheckoutPreviewService
 
     protected function stockPayload(CartItem $item): array
     {
-        $stock = $item->product?->stock;
+        $stock = data_get($item->metadata, 'regional_catalog.stock');
+        $stock = $stock !== null ? $stock : $item->product?->stock;
         $requestedQuantity = (float) $item->quantity;
 
         if ($stock === null) {
@@ -328,6 +332,34 @@ class CheckoutPreviewService
 
             return $promotion;
         }, $grouped));
+    }
+
+    protected function regionalSplits(Collection $items): array
+    {
+        return $items
+            ->filter(fn (array $item) => data_get($item, 'regional_catalog.region_id'))
+            ->groupBy(fn (array $item) => (int) data_get($item, 'regional_catalog.region_id'))
+            ->map(function (Collection $items) {
+                $first = $items->first();
+                $subtotal = round($items->sum(fn (array $item) => (float) data_get($item, 'total', 0)), 2);
+                $tax = round($items->sum(fn (array $item) => (float) data_get($item, 'tax', 0)), 2);
+                $commission = round($items->sum(fn (array $item) => (float) data_get($item, 'marketplace.commission_amount', 0)), 2);
+                $total = round($subtotal + $tax, 2);
+
+                return [
+                    'region_id' => (int) data_get($first, 'regional_catalog.region_id'),
+                    'region_name' => data_get($first, 'regional_catalog.region_name'),
+                    'region_slug' => data_get($first, 'regional_catalog.region_slug'),
+                    'items_count' => round($items->sum(fn (array $item) => (float) data_get($item, 'quantity', 0)), 2),
+                    'subtotal' => $subtotal,
+                    'tax' => $tax,
+                    'total' => $total,
+                    'commission_amount' => $commission,
+                    'net_amount' => max(0, round($total - $commission, 2)),
+                ];
+            })
+            ->values()
+            ->all();
     }
 
     protected function buildTotals(Cart $cart, Collection $checkoutItems): array

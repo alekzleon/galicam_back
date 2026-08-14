@@ -40,6 +40,8 @@ class CartItemResource extends JsonResource
             'stock' => $this->stockPayload(),
             'selected_attribute_value_ids' => data_get($this->metadata, 'selected_attribute_value_ids', []),
             'selected_attributes' => data_get($this->metadata, 'selected_attributes', []),
+            'regional_catalog' => data_get($this->metadata, 'regional_catalog'),
+            'marketplace' => data_get($this->metadata, 'marketplace'),
 
             // cantidades
             'quantity' => (float) $this->quantity,
@@ -93,7 +95,8 @@ class CartItemResource extends JsonResource
 
     protected function stockPayload(): array
     {
-        $stock = $this->product?->stock;
+        $stock = data_get($this->metadata, 'regional_catalog.stock');
+        $stock = $stock !== null ? $stock : $this->product?->stock;
         $requestedQuantity = (float) $this->quantity;
         $locale = Localization::currentLocale(request());
 

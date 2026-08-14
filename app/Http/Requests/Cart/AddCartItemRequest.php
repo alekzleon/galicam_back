@@ -29,6 +29,8 @@ class AddCartItemRequest extends FormRequest
     {
         return [
             'product_id' => ['required', 'integer', 'exists:products,id'],
+            'region_id' => ['sometimes', 'nullable', 'integer', 'exists:regions,id'],
+            'region_slug' => ['sometimes', 'nullable', 'string', 'exists:regions,slug'],
             'quantity' => ['required', 'numeric', 'min:0'],
             'attribute_value_ids' => ['sometimes', 'array'],
             'attribute_value_ids.*' => ['integer', 'exists:variant_attribute_values,id'],
@@ -132,6 +134,8 @@ class AddCartItemRequest extends FormRequest
             'product_id.required' => 'Debes enviar el producto.',
             'product_id.integer' => 'El identificador del producto no es válido.',
             'product_id.exists' => 'El producto no existe.',
+            'region_id.exists' => 'El centro regional seleccionado no existe.',
+            'region_slug.exists' => 'El centro regional seleccionado no existe.',
             'quantity.required' => 'Debes indicar la cantidad.',
             'quantity.numeric' => 'La cantidad debe ser un número.',
             'quantity.min' => 'La cantidad mínima es 0.1',

@@ -86,6 +86,7 @@ class CartResource extends JsonResource
                 'cashback' => null,
             ]),
             'total' => (float) $this->total_snapshot,
+            'regional_splits' => $this->regionalSplitsPayload(),
             'last_activity_at' => $this->last_activity_at,
             'shipping' => $shipping,
             'promotions_applied' => $promotionsApplied,
@@ -107,6 +108,38 @@ class CartResource extends JsonResource
             'addresses' => $addresses->map(fn (UserAddress $address) => $this->addressPayload($address))->values(),
             'can_choose_address' => $addresses->count() > 1,
         ];
+    }
+
+    protected function regionalSplitsPayload(): array
+    {
+        if (! $this->relationLoaded('items')) {
+            return [];
+        }
+
+        return $this->items
+            ->filter(fn ($item) => data_get($item->metadata, 'regional_catalog.region_id'))
+            ->groupBy(fn ($item) => (int) data_get($item->metadata, 'regional_catalog.region_id'))
+            ->map(function ($items) {
+                $first = $items->first();
+                $subtotal = round($items->sum(fn ($item) => (float) $item->line_subtotal_snapshot), 2);
+                $tax = round($items->sum(fn ($item) => (float) data_get($item->metadata, 'tax.tax_amount', 0)), 2);
+                $commission = round($items->sum(fn ($item) => (float) data_get($item->metadata, 'marketplace.commission_amount', 0)), 2);
+                $total = round($subtotal + $tax, 2);
+
+                return [
+                    'region_id' => (int) data_get($first->metadata, 'regional_catalog.region_id'),
+                    'region_name' => data_get($first->metadata, 'regional_catalog.region_name'),
+                    'region_slug' => data_get($first->metadata, 'regional_catalog.region_slug'),
+                    'items_count' => round($items->sum(fn ($item) => (float) $item->quantity), 2),
+                    'subtotal' => $subtotal,
+                    'tax' => $tax,
+                    'total' => $total,
+                    'commission_amount' => $commission,
+                    'net_amount' => max(0, round($total - $commission, 2)),
+                ];
+            })
+            ->values()
+            ->all();
     }
 
     protected function addressPayload(UserAddress $address): array

@@ -75,6 +75,11 @@ class Order extends Model
         return $this->hasMany(Payment::class);
     }
 
+    public function marketplaceTransfers(): HasMany
+    {
+        return $this->hasMany(MarketplaceTransfer::class);
+    }
+
     public function doctoVe(): HasOne
     {
         return $this->hasOne(DoctoVe::class);

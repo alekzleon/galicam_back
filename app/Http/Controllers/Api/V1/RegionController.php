@@ -19,7 +19,9 @@ class RegionController extends Controller
 
         $query = Region::query()
             ->active()
-            ->withCount(['products' => fn ($query) => $query->where('products.is_active', true)])
+            ->withCount(['products' => fn ($query) => $query
+                ->where('products.is_active', true)
+                ->where('product_region.is_active', true)])
             ->ordered();
 
         $regions = $limit > 0
@@ -41,7 +43,9 @@ class RegionController extends Controller
 
         $regions = Region::query()
             ->active()
-            ->withCount(['products' => fn ($query) => $query->where('products.is_active', true)])
+            ->withCount(['products' => fn ($query) => $query
+                ->where('products.is_active', true)
+                ->where('product_region.is_active', true)])
             ->ordered()
             ->get()
             ->map(fn (Region $region) => [
@@ -50,7 +54,8 @@ class RegionController extends Controller
                 'slug' => $region->slug,
                 'products_count' => (int) ($region->products_count ?? 0),
             ])
-            ->values();
+            ->values()
+            ->all();
 
         return response()->json([
             'ok' => true,
@@ -65,7 +70,9 @@ class RegionController extends Controller
     {
         $region = Region::query()
             ->active()
-            ->withCount(['products' => fn ($query) => $query->where('products.is_active', true)])
+            ->withCount(['products' => fn ($query) => $query
+                ->where('products.is_active', true)
+                ->where('product_region.is_active', true)])
             ->where('slug', $slug)
             ->first();
 
@@ -91,6 +98,7 @@ class RegionController extends Controller
                         ->orderByDesc('id');
                 },
             ])
+            ->wherePivot('is_active', true)
             ->where('products.is_active', true)
             ->when($userId, function ($query) use ($userId) {
                 $query->withExists([
@@ -99,8 +107,8 @@ class RegionController extends Controller
             });
 
         match ($sort) {
-            'price_asc' => $productsQuery->orderBy('products.default_price', 'asc'),
-            'price_desc' => $productsQuery->orderBy('products.default_price', 'desc'),
+            'price_asc' => $productsQuery->orderByRaw('COALESCE(product_region.regional_price, products.default_price) asc'),
+            'price_desc' => $productsQuery->orderByRaw('COALESCE(product_region.regional_price, products.default_price) desc'),
             'name_asc' => $productsQuery->orderBy('products.name', 'asc'),
             'name_desc' => $productsQuery->orderBy('products.name', 'desc'),
             default => $productsQuery->orderBy('product_region.sort_order')->orderBy('products.name')->orderBy('products.id'),

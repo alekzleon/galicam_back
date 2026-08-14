@@ -60,6 +60,10 @@ return [
         'currency' => env('STRIPE_CURRENCY', 'mxn'),
         'success_url' => env('STRIPE_SUCCESS_URL', env('FRONTEND_URL', 'http://localhost:5173') . '/checkout/success?session_id={CHECKOUT_SESSION_ID}'),
         'cancel_url' => env('STRIPE_CANCEL_URL', env('FRONTEND_URL', 'http://localhost:5173') . '/checkout/cancel'),
+        'connect_country' => env('STRIPE_CONNECT_COUNTRY', 'MX'),
+        'connect_account_type' => env('STRIPE_CONNECT_ACCOUNT_TYPE', 'express'),
+        'connect_refresh_url' => env('STRIPE_CONNECT_REFRESH_URL', env('FRONTEND_URL', 'http://localhost:5173') . '/admin/stripe-connect/refresh'),
+        'connect_return_url' => env('STRIPE_CONNECT_RETURN_URL', env('FRONTEND_URL', 'http://localhost:5173') . '/admin/stripe-connect/return'),
     ],
 
 ];

@@ -13,6 +13,7 @@ use App\Models\Cart;
 use App\Models\CartItem;
 use App\Models\Promotion;
 use App\Models\Product;
+use App\Models\Region;
 use App\Services\CartService;
 use App\Services\CartExcelService;
 use App\Services\Orders\OrderService;
@@ -111,11 +112,14 @@ class CartController extends Controller
             return $validationError;
         }
 
+        $regionalCatalog = $this->regionalCatalogFromRequest($request, $product);
+
         $cart = $this->cartService->addItem(
             user: $request->user(),
             product: $product,
             quantity: (float) $request->input('quantity'),
-            attributeValueIds: $request->input('attribute_value_ids', [])
+            attributeValueIds: $request->input('attribute_value_ids', []),
+            regionalCatalog: $regionalCatalog
         );
         $cart = $this->salesChannelService->applyToCart(
             $cart,
@@ -453,6 +457,45 @@ class CartController extends Controller
         }
 
         return null;
+    }
+
+    protected function regionalCatalogFromRequest(Request $request, Product $product): ?array
+    {
+        if (! $request->filled('region_id') && ! $request->filled('region_slug')) {
+            return null;
+        }
+
+        $regionQuery = Region::query()->active();
+
+        $region = $request->filled('region_id')
+            ? $regionQuery->whereKey((int) $request->integer('region_id'))->first()
+            : $regionQuery->where('slug', $request->string('region_slug')->toString())->first();
+
+        abort_unless($region, 422, 'El centro regional seleccionado no existe o está inactivo.');
+
+        $regionalProduct = $region->products()
+            ->where('products.id', $product->id)
+            ->where('products.is_active', true)
+            ->wherePivot('is_active', true)
+            ->first();
+
+        abort_unless($regionalProduct, 422, 'El producto no está disponible en el centro regional seleccionado.');
+
+        return [
+            'region_id' => $region->id,
+            'region_name' => $region->name,
+            'region_slug' => $region->slug,
+            'price' => $regionalProduct->pivot?->regional_price !== null
+                ? round((float) $regionalProduct->pivot->regional_price, 2)
+                : null,
+            'stock' => $regionalProduct->pivot?->regional_stock !== null
+                ? round((float) $regionalProduct->pivot->regional_stock, 2)
+                : null,
+            'commission_rate' => $regionalProduct->pivot?->commission_rate !== null
+                ? round((float) $regionalProduct->pivot->commission_rate, 2)
+                : null,
+            'metadata' => $regionalProduct->pivot?->metadata,
+        ];
     }
 
     protected function errorResponse(string $message, int $status = 422): JsonResponse

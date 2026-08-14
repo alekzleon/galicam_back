@@ -50,6 +50,8 @@ class OrderController extends Controller
             ->when($request->filled('from'), fn ($query) => $query->whereDate('created_at', '>=', $request->date('from')))
             ->when($request->filled('to'), fn ($query) => $query->whereDate('created_at', '<=', $request->date('to')));
 
+        $this->applyRegionalOrderScope($query, $request);
+
         match ($sortBy) {
             'oldest' => $query->orderBy('id'),
             'total_asc' => $query->orderBy('total'),
@@ -82,10 +84,13 @@ class OrderController extends Controller
 
     public function show(Order $order): JsonResponse
     {
+        $this->ensureRegionalOrderAccess(request(), $order);
+
         $order->load([
             'user:id,name,email,username',
             'items.product:id,name,sku,slug,image_path',
             'payments' => fn ($query) => $query->latest('id'),
+            'marketplaceTransfers.region:id,name,slug',
             'cart:id,status,converted_at,order_id',
         ]);
 
@@ -98,10 +103,13 @@ class OrderController extends Controller
 
     public function purchaseOrderPdf(Order $order)
     {
+        $this->ensureRegionalOrderAccess(request(), $order);
+
         $order->load([
             'user:id,name,email,username',
             'items.product:id,name,sku,slug,image_path',
             'payments' => fn ($query) => $query->latest('id'),
+            'marketplaceTransfers.region:id,name,slug',
             'cart:id,status,converted_at,order_id',
         ]);
 
@@ -117,6 +125,14 @@ class OrderController extends Controller
 
     public function update(Request $request, Order $order): JsonResponse
     {
+        abort_if(
+            $request->user()?->loadMissing('role')->isRegionalAdmin(),
+            403,
+            'Los administradores regionales no pueden modificar pedidos.'
+        );
+
+        $this->ensureRegionalOrderAccess($request, $order);
+
         $validated = $request->validate([
             'status' => ['sometimes', 'string', Rule::in([
                 Order::STATUS_PENDING_PAYMENT,
@@ -188,6 +204,14 @@ class OrderController extends Controller
 
     public function destroy(Order $order): JsonResponse
     {
+        abort_if(
+            request()->user()?->loadMissing('role')->isRegionalAdmin(),
+            403,
+            'Los administradores regionales no pueden cancelar pedidos.'
+        );
+
+        $this->ensureRegionalOrderAccess(request(), $order);
+
         if ($order->payment_status === Order::PAYMENT_PAID) {
             return response()->json([
                 'ok' => false,
@@ -237,10 +261,50 @@ class OrderController extends Controller
             'tax' => (float) $order->tax,
             'shipping' => (float) $order->shipping,
             'total' => (float) $order->total,
+            'regional_splits' => data_get($order->metadata, 'regional_splits', []),
             'paid_at' => $order->paid_at,
             'document_notes' => $order->document_notes,
             'created_at' => $order->created_at,
         ];
+    }
+
+    protected function applyRegionalOrderScope($query, Request $request): void
+    {
+        $regionId = $this->regionalAdminRegionId($request);
+
+        if ($regionId === null) {
+            return;
+        }
+
+        $query->whereHas('items', fn ($itemQuery) => $itemQuery->where('metadata->regional_catalog->region_id', $regionId));
+    }
+
+    protected function ensureRegionalOrderAccess(Request $request, Order $order): void
+    {
+        $regionId = $this->regionalAdminRegionId($request);
+
+        if ($regionId === null) {
+            return;
+        }
+
+        abort_unless(
+            $order->items()->where('metadata->regional_catalog->region_id', $regionId)->exists(),
+            404,
+            'Pedido no encontrado para tu centro regional.'
+        );
+    }
+
+    protected function regionalAdminRegionId(Request $request): ?int
+    {
+        $user = $request->user()?->loadMissing('role');
+
+        if (! $user || ! $user->isRegionalAdmin()) {
+            return null;
+        }
+
+        abort_if(blank($user->region_id), 403, 'Tu usuario no tiene un centro regional asignado.');
+
+        return (int) $user->region_id;
     }
 
     protected function orderDetailPayload(Order $order): array
@@ -282,6 +346,28 @@ class OrderController extends Controller
                 'paid_at' => $payment->paid_at,
                 'created_at' => $payment->created_at,
             ])->values(),
+            'marketplace_transfers' => $order->marketplaceTransfers->map(fn ($transfer) => [
+                'id' => $transfer->id,
+                'region_id' => $transfer->region_id,
+                'region' => $transfer->region ? [
+                    'id' => $transfer->region->id,
+                    'name' => $transfer->region->name,
+                    'slug' => $transfer->region->slug,
+                ] : null,
+                'stripe_account_id' => $transfer->stripe_account_id,
+                'stripe_transfer_id' => $transfer->stripe_transfer_id,
+                'stripe_charge_id' => $transfer->stripe_charge_id,
+                'transfer_group' => $transfer->transfer_group,
+                'status' => $transfer->status,
+                'gross_amount' => (float) $transfer->gross_amount,
+                'commission_amount' => (float) $transfer->commission_amount,
+                'transfer_amount' => (float) $transfer->transfer_amount,
+                'currency' => strtolower($transfer->currency),
+                'failure_message' => $transfer->failure_message,
+                'transferred_at' => $transfer->transferred_at,
+                'created_at' => $transfer->created_at,
+                'updated_at' => $transfer->updated_at,
+            ])->values(),
             'metadata' => $order->metadata,
             'updated_at' => $order->updated_at,
         ];
@@ -304,6 +390,8 @@ class OrderController extends Controller
             'image' => $item->image_snapshot,
             'selected_attribute_value_ids' => data_get($item->metadata, 'selected_attribute_value_ids', []),
             'selected_attributes' => data_get($item->metadata, 'selected_attributes', []),
+            'regional_catalog' => data_get($item->metadata, 'regional_catalog'),
+            'marketplace' => data_get($item->metadata, 'marketplace'),
             'quantity' => (float) $item->quantity,
             'unit_price' => (float) $item->unit_price,
             'discount' => (float) $item->discount,

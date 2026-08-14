@@ -7,6 +7,7 @@ use App\Enums\CartStatus;
 use App\Enums\PromotionType;
 use App\Models\Product;
 use App\Models\Promotion;
+use App\Models\Region;
 use App\Models\User;
 use App\Services\ProductPriceService;
 use App\Support\Currency;
@@ -295,15 +296,42 @@ class ProductController extends Controller
         $user = $this->currentUser($request);
         $userId = $user ? (int) $user->id : null;
 
-        $product = $this->productListQuery($userId)
-            ->with([
-                'activeGalleryItems',
-                'activeVariantAttributes.activeValues',
-                'activeVariants.attributeValues.attribute',
-            ])
-            ->where('slug', $slug)
-            ->where('is_active', true)
-            ->first();
+        $region = $this->regionFromRequest($request);
+
+        if ($region) {
+            $product = $region->products()
+                ->with([
+                    'category:id,grupo_linea_id,name,slug,translations',
+                    'family:id,linea_articulo_id,category_id,grupo_linea_id,name,slug,translations',
+                    'promotions' => function ($query) use ($user) {
+                        $query->usable($user)
+                            ->orderBy('priority')
+                            ->orderByDesc('id');
+                    },
+                    'activeGalleryItems',
+                    'activeVariantAttributes.activeValues',
+                    'activeVariants.attributeValues.attribute',
+                ])
+                ->wherePivot('is_active', true)
+                ->where('products.slug', $slug)
+                ->where('products.is_active', true)
+                ->when($userId, function ($query) use ($userId) {
+                    $query->withExists([
+                        'favoritedByUsers as is_favorite' => fn ($favoriteQuery) => $favoriteQuery->where('users.id', $userId),
+                    ]);
+                })
+                ->first();
+        } else {
+            $product = $this->productListQuery($userId)
+                ->with([
+                    'activeGalleryItems',
+                    'activeVariantAttributes.activeValues',
+                    'activeVariants.attributeValues.attribute',
+                ])
+                ->where('slug', $slug)
+                ->where('is_active', true)
+                ->first();
+        }
 
         if (!$product) {
             return response()->json([
@@ -351,6 +379,27 @@ class ProductController extends Controller
                     'favoritedByUsers as is_favorite' => fn ($favoriteQuery) => $favoriteQuery->where('users.id', $userId),
                 ]);
             });
+    }
+
+    protected function regionFromRequest(Request $request): ?Region
+    {
+        if ($request->filled('region_id')) {
+            return Region::query()
+                ->active()
+                ->whereKey((int) $request->integer('region_id'))
+                ->first();
+        }
+
+        $regionSlug = trim((string) $request->string('region_slug')->toString());
+
+        if ($regionSlug === '') {
+            return null;
+        }
+
+        return Region::query()
+            ->active()
+            ->where('slug', $regionSlug)
+            ->first();
     }
 
     protected function recentPurchasedProductIds(int $userId, int $limit = 10)
@@ -618,7 +667,9 @@ class ProductController extends Controller
 
     public function formatProduct(Product $product): array
     {
-        $price = (float) $product->default_price;
+        $regionalCatalog = $this->regionalCatalogPayload($product);
+        $effectiveStock = $regionalCatalog['stock'] ?? ($product->stock !== null ? (float) $product->stock : null);
+        $price = (float) ($regionalCatalog['price'] ?? $product->default_price);
         $locale = Localization::currentLocale(request());
 
         $activePromotions = $product->promotions
@@ -663,15 +714,18 @@ class ProductController extends Controller
             'default_price' => $price,
             'base_default_price' => (float) $product->default_price,
             'price_money' => Currency::money($price),
-            'stock' => $product->stock !== null ? (float) $product->stock : null,
-            'stock_status' => $this->stockStatus($product),
-            'stock_message' => $this->stockMessage($product),
+            'stock' => $effectiveStock,
+            'stock_status' => $this->stockStatusFromValue($effectiveStock),
+            'stock_message' => $this->stockMessageFromValue($effectiveStock),
             'price_info' => [
                 'precio_empresa_id' => ProductPriceService::DEFAULT_PRICE_COMPANY_ID,
                 'requested_precio_empresa_id' => ProductPriceService::DEFAULT_PRICE_COMPANY_ID,
                 'is_default_price_list' => true,
-                'source' => 'products.default_price',
+                'source' => $regionalCatalog && $regionalCatalog['price'] !== null
+                    ? 'product_region.regional_price'
+                    : 'products.default_price',
             ],
+            'regional_catalog' => $regionalCatalog,
             'sku' => $product->sku,
             'is_active' => (bool) $product->is_active,
             'is_favorite' => (bool) $product->is_favorite,
@@ -750,15 +804,20 @@ class ProductController extends Controller
 
     protected function stockStatus(Product $product): string
     {
-        if ($product->stock === null) {
+        return $this->stockStatusFromValue($product->stock !== null ? (float) $product->stock : null);
+    }
+
+    protected function stockStatusFromValue(?float $stock): string
+    {
+        if ($stock === null) {
             return 'untracked';
         }
 
-        if ((float) $product->stock <= 0) {
+        if ($stock <= 0) {
             return 'out_of_stock';
         }
 
-        if ((float) $product->stock < 5) {
+        if ($stock < 5) {
             return 'low_stock';
         }
 
@@ -767,17 +826,41 @@ class ProductController extends Controller
 
     protected function stockMessage(Product $product): ?string
     {
+        return $this->stockMessageFromValue($product->stock !== null ? (float) $product->stock : null);
+    }
+
+    protected function stockMessageFromValue(?float $stock): ?string
+    {
         $locale = Localization::currentLocale(request());
 
-        if ($product->stock !== null && (float) $product->stock > 0 && (float) $product->stock < 5) {
+        if ($stock !== null && $stock > 0 && $stock < 5) {
             return I18n::get('stock.low', locale: $locale);
         }
 
-        if ($product->stock !== null && (float) $product->stock <= 0) {
+        if ($stock !== null && $stock <= 0) {
             return I18n::get('stock.out', locale: $locale);
         }
 
         return null;
+    }
+
+    protected function regionalCatalogPayload(Product $product): ?array
+    {
+        $pivot = $product->pivot;
+
+        if (! $pivot || ! isset($pivot->region_id)) {
+            return null;
+        }
+
+        return [
+            'region_id' => (int) $pivot->region_id,
+            'is_active' => (bool) ($pivot->is_active ?? true),
+            'price' => $pivot->regional_price !== null ? (float) $pivot->regional_price : null,
+            'stock' => $pivot->regional_stock !== null ? (float) $pivot->regional_stock : null,
+            'commission_rate' => $pivot->commission_rate !== null ? (float) $pivot->commission_rate : null,
+            'sort_order' => (int) ($pivot->sort_order ?? 0),
+            'metadata' => $pivot->metadata,
+        ];
     }
 
     protected function formatGalleryItem($item): array
