@@ -17,6 +17,7 @@ use App\Models\VariantAttributeValue;
 use App\Services\ProductPriceService;
 use App\Services\Promotions\PromotionEngine;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 
 class CartService
 {
@@ -27,10 +28,15 @@ class CartService
     ) {
     }
 
-    public function getActiveCart(User $user): ?Cart
+    public function getActiveCart(?User $user = null, ?string $guestCartToken = null): ?Cart
     {
+        $guestCartToken = $this->normalizeGuestCartToken($guestCartToken, abortOnMissing: ! $user);
+
+        abort_if(! $user && ! $guestCartToken, 401, 'Debes iniciar sesión o enviar X-Guest-Cart-Token.');
+
         return Cart::query()
-            ->forUser($user->id)
+            ->when($user, fn ($query) => $query->forUser($user->id))
+            ->when(! $user && $guestCartToken, fn ($query) => $query->forGuestToken($guestCartToken))
             ->active()
             ->with([
                 'user',
@@ -41,16 +47,18 @@ class CartService
             ->first();
     }
 
-    public function getOrCreateActiveCart(User $user): Cart
+    public function getOrCreateActiveCart(?User $user = null, ?string $guestCartToken = null): Cart
     {
-        $cart = $this->getActiveCart($user);
+        $guestCartToken = $this->normalizeGuestCartToken($guestCartToken, abortOnMissing: ! $user);
+        $cart = $this->getActiveCart($user, $guestCartToken);
 
         if ($cart) {
             return $cart;
         }
 
         $cart = Cart::create([
-            'user_id' => $user->id,
+            'user_id' => $user?->id,
+            'guest_cart_token' => $user ? null : $guestCartToken,
             'status' => CartStatus::ACTIVE->value,
             'currency' => 'MXN',
             'sales_channel' => 'online_store',
@@ -77,15 +85,16 @@ class CartService
     }
 
     public function addItem(
-        User $user,
+        ?User $user,
         Product $product,
         float $quantity = 1,
         array $attributeValueIds = [],
-        ?array $regionalCatalog = null
+        ?array $regionalCatalog = null,
+        ?string $guestCartToken = null
     ): Cart
     {
-        return DB::transaction(function () use ($user, $product, $quantity, $attributeValueIds, $regionalCatalog) {
-            $cart = $this->getOrCreateActiveCart($user);
+        return DB::transaction(function () use ($user, $product, $quantity, $attributeValueIds, $regionalCatalog, $guestCartToken) {
+            $cart = $this->getOrCreateActiveCart($user, $guestCartToken);
 
             $quantity = round((float) $quantity, 2);
 
@@ -161,21 +170,21 @@ class CartService
         });
     }
 
-    public function updateItemQuantity(User $user, CartItem $item, float $quantity): Cart
+    public function updateItemQuantity(?User $user, CartItem $item, float $quantity, ?string $guestCartToken = null): Cart
     {
-        return DB::transaction(function () use ($user, $item, $quantity) {
+        return DB::transaction(function () use ($user, $item, $quantity, $guestCartToken) {
             $cart = $item->cart()->with([
                 'user',
                 'items.product.category',
                 'items.product.family',
             ])->firstOrFail();
 
-            $this->ensureCartOwnership($cart, $user);
+            $this->ensureCartOwnership($cart, $user, $guestCartToken);
 
             $quantity = round((float) $quantity, 2);
 
             if ($quantity <= 0) {
-                return $this->removeItem($user, $item);
+                return $this->removeItem($user, $item, $guestCartToken);
             }
 
             if ($item->product) {
@@ -215,16 +224,16 @@ class CartService
         });
     }
 
-    public function removeItem(User $user, CartItem $item): Cart
+    public function removeItem(?User $user, CartItem $item, ?string $guestCartToken = null): Cart
     {
-        return DB::transaction(function () use ($user, $item) {
+        return DB::transaction(function () use ($user, $item, $guestCartToken) {
             $cart = $item->cart()->with([
                 'user',
                 'items.product.category',
                 'items.product.family',
             ])->firstOrFail();
 
-            $this->ensureCartOwnership($cart, $user);
+            $this->ensureCartOwnership($cart, $user, $guestCartToken);
 
             $eventData = [
                 'product_id' => $item->product_id,
@@ -256,10 +265,10 @@ class CartService
         });
     }
 
-    public function clearCart(User $user): Cart
+    public function clearCart(?User $user = null, ?string $guestCartToken = null): Cart
     {
-        return DB::transaction(function () use ($user) {
-            $cart = $this->getOrCreateActiveCart($user);
+        return DB::transaction(function () use ($user, $guestCartToken) {
+            $cart = $this->getOrCreateActiveCart($user, $guestCartToken);
 
             $items = CartItem::query()
                 ->where('cart_id', $cart->id)
@@ -522,7 +531,14 @@ class CartService
 
         $itemDiscount = round((float) $cart->items->sum('line_discount_snapshot'), 2);
         $firstPurchaseBase = max(0, round($subtotal - $itemDiscount, 2));
-        $firstPurchaseDiscount = $this->loyaltyService->firstPurchaseDiscount($cart->user, $firstPurchaseBase);
+        $firstPurchaseDiscount = $cart->user
+            ? $this->loyaltyService->firstPurchaseDiscount($cart->user, $firstPurchaseBase)
+            : [
+                'enabled' => false,
+                'eligible' => false,
+                'percentage' => 0.0,
+                'amount' => 0.0,
+            ];
         $taxBreakdown = $this->calculateTaxes($cart);
         $tax = round((float) $taxBreakdown['total'], 2);
         $metadata = $cart->metadata ?? [];
@@ -533,7 +549,9 @@ class CartService
         );
         $preCashbackTotal = max(0, round($subtotal - $itemDiscount - $firstPurchaseDiscount['amount'] - $coupon['discount_amount'] + $tax, 2));
         $cashbackRequested = round((float) data_get($metadata, 'loyalty.cashback.applied_amount', 0), 2);
-        $cashbackApplied = min($cashbackRequested, $this->loyaltyService->maxRedeemable($cart->user, $preCashbackTotal));
+        $cashbackApplied = $cart->user
+            ? min($cashbackRequested, $this->loyaltyService->maxRedeemable($cart->user, $preCashbackTotal))
+            : 0.0;
         $cashbackEarn = $this->loyaltyService->cashbackEarn(max(0, round($preCashbackTotal - $cashbackApplied, 2)));
         $discount = round($itemDiscount + $firstPurchaseDiscount['amount'] + $coupon['discount_amount'] + $cashbackApplied, 2);
         $total = max(0, round($preCashbackTotal - $cashbackApplied, 2));
@@ -548,8 +566,8 @@ class CartService
         $metadata['loyalty'] = [
             'first_purchase_discount' => $firstPurchaseDiscount,
             'cashback' => [
-                'available_balance' => $this->loyaltyService->availableCashback($cart->user),
-                'max_redeemable' => $this->loyaltyService->maxRedeemable($cart->user, $preCashbackTotal),
+                'available_balance' => $cart->user ? $this->loyaltyService->availableCashback($cart->user) : 0.0,
+                'max_redeemable' => $cart->user ? $this->loyaltyService->maxRedeemable($cart->user, $preCashbackTotal) : 0.0,
                 'applied_amount' => $cashbackApplied,
                 'earn' => $cashbackEarn,
             ],
@@ -574,7 +592,7 @@ class CartService
 
     public function registerEvent(
         Cart $cart,
-        User $user,
+        ?User $user,
         string $eventType,
         ?CartItem $cartItem = null,
         ?int $cartItemId = null,
@@ -583,7 +601,7 @@ class CartService
         return CartEvent::create([
             'cart_id' => $cart->id,
             'cart_item_id' => $cartItem?->id ?? $cartItemId,
-            'user_id' => $user->id,
+            'user_id' => $user?->id,
             'event_type' => $eventType,
             'event_data' => $eventData,
             'created_at' => now(),
@@ -1001,8 +1019,107 @@ class CartService
         ];
     }
 
-    protected function couponValidationMessage(Coupon $coupon, User $user): ?string
+    public function mergeGuestCartIntoUser(?string $guestCartToken, User $user): ?Cart
     {
+        $guestCartToken = $this->normalizeGuestCartToken($guestCartToken, abortOnMissing: false);
+
+        if (! $guestCartToken) {
+            return null;
+        }
+
+        return DB::transaction(function () use ($guestCartToken, $user) {
+            $guestCart = Cart::query()
+                ->forGuestToken($guestCartToken)
+                ->whereNull('user_id')
+                ->active()
+                ->with(['items.product.category', 'items.product.family'])
+                ->latest('id')
+                ->lockForUpdate()
+                ->first();
+
+            if (! $guestCart) {
+                return null;
+            }
+
+            $userCart = Cart::query()
+                ->forUser($user->id)
+                ->active()
+                ->whereKeyNot($guestCart->id)
+                ->with(['items.product.category', 'items.product.family'])
+                ->latest('id')
+                ->lockForUpdate()
+                ->first();
+
+            if (! $userCart) {
+                $guestCart->forceFill([
+                    'user_id' => $user->id,
+                    'guest_cart_token' => null,
+                    'last_activity_at' => now(),
+                    'metadata' => array_merge($guestCart->metadata ?? [], [
+                        'guest_cart_token_merged_at' => now()->toISOString(),
+                    ]),
+                ])->save();
+
+                $this->registerEvent(
+                    cart: $guestCart,
+                    user: $user,
+                    eventType: 'guest_cart_merged',
+                    eventData: ['message' => 'Carrito invitado asignado al iniciar sesión.']
+                );
+
+                return $this->recalculateCart($guestCart);
+            }
+
+            foreach ($guestCart->items as $guestItem) {
+                $selectionKey = data_get($guestItem->metadata, 'selected_attributes_key', '');
+                $regionalKey = (string) data_get($guestItem->metadata, 'regional_catalog.region_id', '');
+
+                $targetItem = $userCart->items
+                    ->first(fn (CartItem $item) => (int) $item->product_id === (int) $guestItem->product_id
+                        && data_get($item->metadata, 'selected_attributes_key', '') === $selectionKey
+                        && (string) data_get($item->metadata, 'regional_catalog.region_id', '') === $regionalKey);
+
+                if ($targetItem) {
+                    $targetItem->forceFill([
+                        'quantity' => round((float) $targetItem->quantity + (float) $guestItem->quantity, 2),
+                        'line_subtotal_snapshot' => round((float) $targetItem->price_snapshot * ((float) $targetItem->quantity + (float) $guestItem->quantity), 2),
+                    ])->save();
+
+                    $guestItem->delete();
+                    continue;
+                }
+
+                $guestItem->forceFill([
+                    'cart_id' => $userCart->id,
+                ])->save();
+            }
+
+            $guestCart->forceFill([
+                'guest_cart_token' => null,
+                'status' => CartStatus::ARCHIVED->value,
+                'last_activity_at' => now(),
+                'metadata' => array_merge($guestCart->metadata ?? [], [
+                    'guest_cart_token_merged_at' => now()->toISOString(),
+                ]),
+            ])->save();
+
+            $this->registerEvent(
+                cart: $guestCart,
+                user: $user,
+                eventType: 'guest_cart_merged',
+                eventData: ['guest_cart_id' => $guestCart->id]
+            );
+
+            return $this->recalculateCart($userCart);
+        });
+    }
+
+    protected function couponValidationMessage(Coupon $coupon, ?User $user): ?string
+    {
+        if (! $user) {
+            return 'Debes iniciar sesión para aplicar cupones.';
+        }
+
         if (!$coupon->is_active) {
             return 'El cupón no está activo.';
         }
@@ -1026,9 +1143,35 @@ class CartService
         return null;
     }
 
-    protected function ensureCartOwnership(Cart $cart, User $user): void
+    protected function ensureCartOwnership(Cart $cart, ?User $user = null, ?string $guestCartToken = null): void
     {
-        abort_unless((int) $cart->user_id === (int) $user->id, 403, 'No tienes acceso a este carrito.');
+        $guestCartToken = $this->normalizeGuestCartToken($guestCartToken, abortOnMissing: false);
+
+        if ($user) {
+            abort_unless((int) $cart->user_id === (int) $user->id, 403, 'No tienes acceso a este carrito.');
+        } else {
+            abort_unless(
+                filled($guestCartToken) && hash_equals((string) $cart->guest_cart_token, $guestCartToken),
+                403,
+                'No tienes acceso a este carrito.'
+            );
+        }
+
         abort_unless($cart->status === CartStatus::ACTIVE->value, 422, 'El carrito no está activo.');
+    }
+
+    public function normalizeGuestCartToken(?string $guestCartToken, bool $abortOnMissing = true): ?string
+    {
+        $guestCartToken = trim((string) $guestCartToken);
+
+        if ($guestCartToken === '') {
+            abort_if($abortOnMissing, 401, 'Debes iniciar sesión o enviar X-Guest-Cart-Token.');
+
+            return null;
+        }
+
+        abort_unless(Str::isUuid($guestCartToken), 422, 'X-Guest-Cart-Token debe ser un UUID válido.');
+
+        return $guestCartToken;
     }
 }

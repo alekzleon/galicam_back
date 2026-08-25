@@ -26,7 +26,9 @@ class CheckoutController extends Controller
 
     public function preview(Request $request): JsonResponse
     {
-        $recoverableOrder = $this->orderService->findRecoverablePendingOrder($request->user());
+        $user = $this->currentUser($request);
+        $guestCartToken = $this->guestCartToken($request);
+        $recoverableOrder = $user ? $this->orderService->findRecoverablePendingOrder($user) : null;
 
         if ($recoverableOrder) {
             return response()->json([
@@ -40,7 +42,7 @@ class CheckoutController extends Controller
             ]);
         }
 
-        $cart = $this->cartService->getOrCreateActiveCart($request->user());
+        $cart = $this->cartService->getOrCreateActiveCart($user, $guestCartToken);
         $cart = $this->salesChannelService->applyToCart(
             $cart,
             $this->salesChannelService->fromRequest($request),
@@ -75,7 +77,9 @@ class CheckoutController extends Controller
 
     public function validateCart(Request $request): JsonResponse
     {
-        $recoverableOrder = $this->orderService->findRecoverablePendingOrder($request->user());
+        $user = $this->currentUser($request);
+        $guestCartToken = $this->guestCartToken($request);
+        $recoverableOrder = $user ? $this->orderService->findRecoverablePendingOrder($user) : null;
 
         if ($recoverableOrder) {
             return response()->json([
@@ -94,7 +98,7 @@ class CheckoutController extends Controller
             ], 409);
         }
 
-        $cart = $this->cartService->getOrCreateActiveCart($request->user());
+        $cart = $this->cartService->getOrCreateActiveCart($user, $guestCartToken);
         $cart = $this->salesChannelService->applyToCart(
             $cart,
             $this->salesChannelService->fromRequest($request),
@@ -137,6 +141,10 @@ class CheckoutController extends Controller
 
     public function createOrder(Request $request): JsonResponse
     {
+        $user = $this->currentUser($request);
+
+        abort_unless($user, 401, 'Debes iniciar sesión para crear una orden.');
+
         $validated = $request->validate([
             'address_id' => ['nullable', 'integer', 'min:1'],
             'dir_cli_id' => ['nullable', 'integer', 'min:1'],
@@ -151,7 +159,7 @@ class CheckoutController extends Controller
         ]);
 
         $order = $this->orderService->createPendingFromActiveCart(
-            $request->user(),
+            $user,
             $validated['address_id'] ?? null,
             $validated['dir_cli_id'] ?? null,
             $validated['document_notes'] ?? null,
@@ -168,6 +176,10 @@ class CheckoutController extends Controller
 
     public function createStripeSession(Request $request): JsonResponse
     {
+        $user = $this->currentUser($request);
+
+        abort_unless($user, 401, 'Debes iniciar sesión para pagar.');
+
         $validated = $request->validate([
             'order_id' => ['required', 'integer', 'exists:orders,id'],
         ]);
@@ -175,7 +187,7 @@ class CheckoutController extends Controller
         $order = Order::query()
             ->with(['items', 'user'])
             ->whereKey($validated['order_id'])
-            ->where('user_id', $request->user()->id)
+            ->where('user_id', $user->id)
             ->firstOrFail();
 
         abort_unless($order->isPendingPayment(), 422, 'El pedido no está pendiente de pago.');
@@ -371,5 +383,15 @@ class CheckoutController extends Controller
         }
 
         return $this->stripePaymentService->syncCheckoutSession($order->stripe_session_id) ?? $order;
+    }
+
+    protected function currentUser(Request $request)
+    {
+        return $request->user() ?? auth('sanctum')->user();
+    }
+
+    protected function guestCartToken(Request $request): ?string
+    {
+        return $request->header('X-Guest-Cart-Token');
     }
 }

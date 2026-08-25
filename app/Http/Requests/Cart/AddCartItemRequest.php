@@ -17,7 +17,7 @@ class AddCartItemRequest extends FormRequest
      */
     public function authorize(): bool
     {
-        return auth()->check();
+        return auth('sanctum')->check() || auth()->check() || $this->headers->has('X-Guest-Cart-Token');
     }
 
     /**

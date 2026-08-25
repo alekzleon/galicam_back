@@ -12,6 +12,7 @@ class Cart extends Model
 {
     protected $fillable = [
         'user_id',
+        'guest_cart_token',
         'status',
         'currency',
         'items_count',
@@ -75,6 +76,11 @@ class Cart extends Model
     public function scopeForUser(Builder $query, int $userId): Builder
     {
         return $query->where('user_id', $userId);
+    }
+
+    public function scopeForGuestToken(Builder $query, string $guestCartToken): Builder
+    {
+        return $query->where('guest_cart_token', $guestCartToken);
     }
 
     public function touchActivity(): void

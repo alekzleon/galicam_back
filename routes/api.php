@@ -148,6 +148,22 @@ Route::prefix('v1')->group(function () {
 
     /*
     |--------------------------------------------------------------------------
+    | Carrito/checkout público con soporte de invitado
+    |--------------------------------------------------------------------------
+    */
+    Route::get('/cart', [CartController::class, 'index']);
+    Route::get('/cart/summary', [CartController::class, 'summary']);
+    Route::post('/cart/items', [CartController::class, 'storeItem']);
+    Route::patch('/cart/items/{item}', [CartController::class, 'updateItem']);
+    Route::delete('/cart/items/{item}', [CartController::class, 'destroyItem']);
+    Route::delete('/cart/items', [CartController::class, 'clear']);
+    Route::get('/checkout/preview', [CheckoutController::class, 'preview']);
+    Route::post('/checkout/validate', [CheckoutController::class, 'validateCart']);
+    Route::post('/checkout/orders', [CheckoutController::class, 'createOrder']);
+    Route::post('/checkout/stripe/session', [CheckoutController::class, 'createStripeSession']);
+
+    /*
+    |--------------------------------------------------------------------------
     | Rutas autenticadas generales
     |--------------------------------------------------------------------------
     */
@@ -172,15 +188,9 @@ Route::prefix('v1')->group(function () {
         | Laravel le regresa.
         |--------------------------------------------------------------------------
         */
-        Route::get('/cart', [CartController::class, 'index']);
-        Route::get('/cart/summary', [CartController::class, 'summary']);
         Route::get('/cart/excel/layout', [CartController::class, 'downloadExcelLayout']);
         Route::post('/cart/excel/import', [CartController::class, 'importExcel']);
-        Route::post('/cart/items', [CartController::class, 'storeItem']);
         Route::patch('/cart/sales-channel', [CartController::class, 'updateSalesChannel']);
-        Route::patch('/cart/items/{item}', [CartController::class, 'updateItem']);
-        Route::delete('/cart/items/{item}', [CartController::class, 'destroyItem']);
-        Route::delete('/cart/items', [CartController::class, 'clear']);
         Route::post('/cart/cashback/apply', [CartController::class, 'applyCashback']);
         Route::delete('/cart/cashback', [CartController::class, 'clearCashback']);
         Route::post('/cart/coupon', [CartController::class, 'applyCoupon']);
@@ -198,13 +208,9 @@ Route::prefix('v1')->group(function () {
         | respeta unidades regalo a $0.10 y devuelve desglose listo para UI.
         |--------------------------------------------------------------------------
         */
-        Route::get('/checkout/preview', [CheckoutController::class, 'preview']);
-        Route::post('/checkout/validate', [CheckoutController::class, 'validateCart']);
-        Route::post('/checkout/orders', [CheckoutController::class, 'createOrder']);
         Route::get('/checkout/orders/{order}', [CheckoutController::class, 'showOrder']);
         Route::post('/checkout/orders/{order}/restore-cart', [CheckoutController::class, 'restoreCartFromOrder']);
         Route::post('/checkout/recoverable-order/restore', [CheckoutController::class, 'restoreRecoverableOrder']);
-        Route::post('/checkout/stripe/session', [CheckoutController::class, 'createStripeSession']);
         Route::post('/checkout/stripe/session/confirm', [CheckoutController::class, 'confirmStripeSession']);
 
         /*

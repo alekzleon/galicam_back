@@ -15,6 +15,7 @@ use App\Models\CustomerProfile;
 use App\Models\EcommerceSetting;
 use App\Models\Role;
 use App\Models\User;
+use App\Services\CartService;
 use App\Support\I18n;
 use App\Support\Localization;
 use Illuminate\Support\Facades\DB;
@@ -63,6 +64,8 @@ class AuthController extends BaseApiController
             return $user;
         });
 
+        $user->load(['role.modules', 'region', 'customerProfile']);
+        app(CartService::class)->mergeGuestCartIntoUser($this->guestCartToken($request), $user);
         $user->load(['role.modules', 'region', 'customerProfile']);
 
         $token = $user->createToken(
@@ -140,6 +143,9 @@ class AuthController extends BaseApiController
         $token = $user->createToken(
             $request->input('device_name', 'react-web')
         )->plainTextToken;
+
+        app(CartService::class)->mergeGuestCartIntoUser($this->guestCartToken($request), $user);
+        $user->load(['role.modules', 'region']);
 
         $modules = $user->role->modules
             ->where('is_active', true)
@@ -262,6 +268,11 @@ class AuthController extends BaseApiController
                 'preferred_locale' => $validated['locale'],
             ],
         ]);
+    }
+
+    protected function guestCartToken(Request $request): ?string
+    {
+        return $request->input('guest_cart_token') ?: $request->header('X-Guest-Cart-Token');
     }
 
     public function forgotPassword(ForgotPasswordRequest $request): JsonResponse

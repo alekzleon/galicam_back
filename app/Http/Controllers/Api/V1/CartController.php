@@ -37,7 +37,9 @@ class CartController extends Controller
 
     public function index(Request $request): JsonResponse
     {
-        $recoverableOrder = $this->orderService->findRecoverablePendingOrder($request->user());
+        $user = $this->currentUser($request);
+        $guestCartToken = $this->guestCartToken($request);
+        $recoverableOrder = $user ? $this->orderService->findRecoverablePendingOrder($user) : null;
         if ($recoverableOrder) {
             return response()->json([
                 'success' => true,
@@ -50,7 +52,7 @@ class CartController extends Controller
         }
 
         // $cart = $this->cartService->getOrCreateActiveCart($request->user())->load('items');
-        $cart = $this->cartService->getOrCreateActiveCart($request->user());
+        $cart = $this->cartService->getOrCreateActiveCart($user, $guestCartToken);
         $cart = $this->salesChannelService->applyToCart(
             $cart,
             $this->salesChannelService->fromRequest($request),
@@ -67,7 +69,9 @@ class CartController extends Controller
 
     public function summary(Request $request): JsonResponse
     {
-        $recoverableOrder = $this->orderService->findRecoverablePendingOrder($request->user());
+        $user = $this->currentUser($request);
+        $guestCartToken = $this->guestCartToken($request);
+        $recoverableOrder = $user ? $this->orderService->findRecoverablePendingOrder($user) : null;
 
         if ($recoverableOrder) {
             return response()->json([
@@ -81,7 +85,7 @@ class CartController extends Controller
             ]);
         }
 
-        $cart = $this->cartService->getOrCreateActiveCart($request->user());
+        $cart = $this->cartService->getOrCreateActiveCart($user, $guestCartToken);
         $cart = $this->salesChannelService->applyToCart(
             $cart,
             $this->salesChannelService->fromRequest($request),
@@ -98,6 +102,8 @@ class CartController extends Controller
 
     public function storeItem(AddCartItemRequest $request): JsonResponse
     {
+        $user = $this->currentUser($request);
+        $guestCartToken = $this->guestCartToken($request);
         $product = Product::query()
             ->with(['category', 'family'])
             ->findOrFail($request->integer('product_id'));
@@ -106,7 +112,7 @@ class CartController extends Controller
             return $this->errorResponse('El producto no existe.');
         }
 
-        $validationError = $this->validateProductCanBeAdded($product, $request->user());
+        $validationError = $this->validateProductCanBeAdded($product, $user);
 
         if ($validationError) {
             return $validationError;
@@ -115,11 +121,12 @@ class CartController extends Controller
         $regionalCatalog = $this->regionalCatalogFromRequest($request, $product);
 
         $cart = $this->cartService->addItem(
-            user: $request->user(),
+            user: $user,
             product: $product,
             quantity: (float) $request->input('quantity'),
             attributeValueIds: $request->input('attribute_value_ids', []),
-            regionalCatalog: $regionalCatalog
+            regionalCatalog: $regionalCatalog,
+            guestCartToken: $guestCartToken
         );
         $cart = $this->salesChannelService->applyToCart(
             $cart,
@@ -166,9 +173,10 @@ class CartController extends Controller
     public function updateItem(UpdateCartItemRequest $request, CartItem $item): JsonResponse
     {
         $cart = $this->cartService->updateItemQuantity(
-            user: $request->user(),
+            user: $this->currentUser($request),
             item: $item,
-            quantity: (float) $request->input('quantity')
+            quantity: (float) $request->input('quantity'),
+            guestCartToken: $this->guestCartToken($request)
         );
 
         return response()->json([
@@ -181,8 +189,9 @@ class CartController extends Controller
     public function destroyItem(Request $request, CartItem $item): JsonResponse
     {
         $cart = $this->cartService->removeItem(
-            user: $request->user(),
-            item: $item
+            user: $this->currentUser($request),
+            item: $item,
+            guestCartToken: $this->guestCartToken($request)
         );
 
         return response()->json([
@@ -194,7 +203,7 @@ class CartController extends Controller
 
     public function clear(Request $request): JsonResponse
     {
-        $cart = $this->cartService->clearCart($request->user());
+        $cart = $this->cartService->clearCart($this->currentUser($request), $this->guestCartToken($request));
 
         return response()->json([
             'success' => true,
@@ -457,6 +466,16 @@ class CartController extends Controller
         }
 
         return null;
+    }
+
+    protected function currentUser(Request $request)
+    {
+        return $request->user() ?? auth('sanctum')->user();
+    }
+
+    protected function guestCartToken(Request $request): ?string
+    {
+        return $request->header('X-Guest-Cart-Token');
     }
 
     protected function regionalCatalogFromRequest(Request $request, Product $product): ?array
