@@ -5,6 +5,7 @@ use Illuminate\Support\Facades\Route;
 
 use App\Http\Controllers\Api\V1\AuthController;
 use App\Http\Controllers\Api\V1\CategoryController;
+use App\Http\Controllers\Api\V1\ArtisanController;
 use App\Http\Controllers\Api\V1\ProductController;
 use App\Http\Controllers\Api\V1\CatalogController;
 use App\Http\Controllers\Api\V1\SearchSuggestionController;
@@ -40,6 +41,7 @@ use App\Http\Controllers\Api\V1\Admin\AdminProductController;
 use App\Http\Controllers\Api\V1\Admin\OrderController;
 use App\Http\Controllers\Api\V1\Admin\CustomerController;
 use App\Http\Controllers\Api\V1\Admin\CategoryController as AdminCategoryController;
+use App\Http\Controllers\Api\V1\Admin\ArtisanController as AdminArtisanController;
 use App\Http\Controllers\Api\V1\Admin\FamilyController as AdminFamilyController;
 use App\Http\Controllers\Api\V1\Admin\CreditController;
 use App\Http\Controllers\Api\V1\Admin\CollectionController;
@@ -98,6 +100,10 @@ Route::prefix('v1')->group(function () {
     |--------------------------------------------------------------------------
     */
     Route::get('/categories', [CategoryController::class, 'index']);
+    Route::get('/categories/{category:slug}/products', [CategoryController::class, 'products']);
+    Route::get('/artisans', [ArtisanController::class, 'index']);
+    Route::get('/artisans/random/spotlight', [ArtisanController::class, 'randomSpotlight']);
+    Route::get('/artisans/{slug}', [ArtisanController::class, 'show']);
     Route::get('/products', [ProductController::class, 'index']);
     Route::get('/products/smart-search', [ProductController::class, 'smartSearch']);
     Route::get('/products/recent-purchases', [ProductController::class, 'recentPurchases']);
@@ -113,6 +119,9 @@ Route::prefix('v1')->group(function () {
     Route::get('/settings', [SiteSettingController::class, 'show']);
     Route::get('/storefront', [HomeController::class, 'storefront']);
     Route::get('/home/sections', [HomeController::class, 'sections']);
+    Route::get('/home/featured-artisan-products', [HomeController::class, 'featuredArtisanProducts']);
+    Route::get('/home/featured-regions', [HomeController::class, 'featuredRegions']);
+    Route::get('/home/recent-discoveries', [HomeController::class, 'recentDiscoveries']);
     Route::get('/home/new-products', [HomeController::class, 'newProducts']);
     Route::get('/home/popular-searches', [HomeController::class, 'popularSearches']);
     Route::get('/home', [HomeController::class, 'home']);
@@ -409,6 +418,36 @@ Route::prefix('v1')->group(function () {
 
                 Route::get('regions', [AdminRegionController::class, 'index'])
                     ->middleware('module:regiones');
+
+                Route::get('artisans', [AdminArtisanController::class, 'index'])
+                    ->middleware('module:artesanos');
+
+                Route::post('artisans', [AdminArtisanController::class, 'store'])
+                    ->middleware('module:artesanos');
+
+                Route::get('artisans/{artisan}', [AdminArtisanController::class, 'show'])
+                    ->middleware('module:artesanos');
+
+                Route::post('artisans/{artisan}', [AdminArtisanController::class, 'update'])
+                    ->middleware('module:artesanos');
+
+                Route::put('artisans/{artisan}', [AdminArtisanController::class, 'update'])
+                    ->middleware('module:artesanos');
+
+                Route::patch('artisans/{artisan}', [AdminArtisanController::class, 'update'])
+                    ->middleware('module:artesanos');
+
+                Route::delete('artisans/{artisan}', [AdminArtisanController::class, 'destroy'])
+                    ->middleware('module:artesanos');
+
+                Route::patch('artisans/{artisan}/status', [AdminArtisanController::class, 'updateStatus'])
+                    ->middleware('module:artesanos');
+
+                Route::put('artisans/{artisan}/products', [AdminArtisanController::class, 'syncArtisanProducts'])
+                    ->middleware('module:artesanos');
+
+                Route::patch('artisans/{artisan}/products', [AdminArtisanController::class, 'syncArtisanProducts'])
+                    ->middleware('module:artesanos');
 
                 Route::post('regions', [AdminRegionController::class, 'store'])
                     ->middleware('module:regiones');

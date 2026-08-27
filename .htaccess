@@ -1,0 +1,11 @@
+<IfModule mod_rewrite.c>
+    RewriteEngine On
+
+    # Keep direct requests to /public working while canonicalizing visible URLs.
+    RewriteCond %{THE_REQUEST} \s/+public/?([^\s?]*) [NC]
+    RewriteRule ^public/?(.*)$ /$1 [R=301,L]
+
+    # Serve the Laravel public directory while keeping clean URLs.
+    RewriteRule ^$ public/index.php [L]
+    RewriteRule ^((?!public/).*)$ public/$1 [L]
+</IfModule>

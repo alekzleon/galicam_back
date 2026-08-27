@@ -82,6 +82,16 @@ class ModuleSeeder extends Seeder
                 'is_active' => true,
             ],
             [
+                'name' => 'artesanos',
+                'display_name' => 'Artesanos',
+                'description' => 'Administración de artesanos, su región, historia, contacto y productos asignados',
+                'group_key' => 'catalogo',
+                'sort_order' => 36,
+                'route_name' => 'admin.artisans.index',
+                'icon' => 'fa-solid fa-hands',
+                'is_active' => true,
+            ],
+            [
                 'name' => 'carga_masiva_productos',
                 'display_name' => 'Carga masiva',
                 'description' => 'Importación masiva de productos mediante plantilla Excel',

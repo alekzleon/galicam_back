@@ -6,12 +6,14 @@ use App\Http\Controllers\Controller;
 use App\Http\Resources\Banner\BannerResource;
 use App\Http\Resources\BrandBanner\BrandBannerResource;
 use App\Http\Resources\SiteSettingResource;
+use App\Models\Artisan;
 use App\Models\Banner;
 use App\Models\BrandBanner;
 use App\Models\Category;
 use App\Models\EcommerceSetting;
 use App\Models\Product;
 use App\Models\Promotion;
+use App\Models\Region;
 use App\Models\SiteSetting;
 use App\Support\Currency;
 use App\Support\Localization;
@@ -74,12 +76,53 @@ class HomeController extends Controller
         return response()->json([
             'ok' => true,
             'data' => [
+                'featured_artisan_products' => $this->featuredArtisanProductsPayload($request),
+                'featured_regions' => $this->featuredRegionsPayload($request),
+                'recent_discoveries' => $this->recentDiscoveriesPayload($request),
                 'new_products' => $this->newProductsPayload($request, $newProductsLimit),
                 'popular_searches' => $this->popularSearchesPayload($request, $termsLimit, $productsLimit),
             ],
             'meta' => [
                 'locale' => Localization::currentLocale($request),
                 'currency' => Currency::currentCurrency($request),
+            ],
+        ]);
+    }
+
+    public function featuredArtisanProducts(Request $request): JsonResponse
+    {
+        return response()->json([
+            'ok' => true,
+            'data' => $this->featuredArtisanProductsPayload($request),
+            'meta' => [
+                'locale' => Localization::currentLocale($request),
+                'currency' => Currency::currentCurrency($request),
+                'limit' => 5,
+            ],
+        ]);
+    }
+
+    public function featuredRegions(Request $request): JsonResponse
+    {
+        return response()->json([
+            'ok' => true,
+            'data' => $this->featuredRegionsPayload($request),
+            'meta' => [
+                'locale' => Localization::currentLocale($request),
+                'limit' => 6,
+            ],
+        ]);
+    }
+
+    public function recentDiscoveries(Request $request): JsonResponse
+    {
+        return response()->json([
+            'ok' => true,
+            'data' => $this->recentDiscoveriesPayload($request),
+            'meta' => [
+                'locale' => Localization::currentLocale($request),
+                'currency' => Currency::currentCurrency($request),
+                'limit' => 6,
             ],
         ]);
     }
@@ -148,6 +191,9 @@ class HomeController extends Controller
             'promotions' => $this->promotions(),
             'daily_offers' => $this->promotions(2),
             'featured_products' => $this->featuredProducts(),
+            'featured_artisan_products' => $this->featuredArtisanProductsPayload(request()),
+            'featured_regions' => $this->featuredRegionsPayload(request()),
+            'recent_discoveries' => $this->recentDiscoveriesPayload(request()),
             'recent_purchase_products' => $this->featuredProducts(8),
             'brand_banners' => BrandBannerResource::collection(
                 BrandBanner::query()->active()->currentWindow()->ordered()->limit(6)->get()
@@ -185,6 +231,9 @@ class HomeController extends Controller
 
         return Category::query()
             ->where('is_active', true)
+            ->withCount([
+                'products as active_products_count' => fn ($query) => $query->where('is_active', true),
+            ])
             ->orderBy('name')
             ->limit(8)
             ->get([
@@ -205,6 +254,11 @@ class HomeController extends Controller
                 'slug' => $category->slug,
                 'image_path' => $category->image_path,
                 'image_url' => $category->image_url,
+                'products_count' => (int) ($category->active_products_count ?? 0),
+                'links' => [
+                    'products' => url("/api/v1/categories/{$category->slug}/products"),
+                    'catalog' => url("/api/v1/products?category_slug={$category->slug}"),
+                ],
             ])
             ->values()
             ->all();
@@ -306,6 +360,154 @@ class HomeController extends Controller
             ->map(fn (Product $product) => $this->compactProductPayload($product, $request))
             ->values()
             ->all();
+    }
+
+    protected function featuredArtisanProductsPayload(Request $request): array
+    {
+        $locale = Localization::currentLocale($request);
+        $currency = Currency::currentCurrency($request);
+
+        $products = Product::query()
+            ->with([
+                'artisans' => fn ($query) => $query
+                    ->active()
+                    ->with(['region:id,name,slug,is_active,translations'])
+                    ->ordered(),
+            ])
+            ->where('products.is_active', true)
+            ->whereHas('artisans', fn ($query) => $query->active())
+            ->inRandomOrder()
+            ->limit(5)
+            ->get()
+            ->filter(fn (Product $product) => $product->artisans->isNotEmpty())
+            ->map(function (Product $product) use ($locale, $currency) {
+                /** @var Artisan $artisan */
+                $artisan = $product->artisans->first();
+                $price = Currency::money((float) $product->default_price, $currency);
+                $stock = $product->stock !== null ? (float) $product->stock : null;
+
+                return [
+                    'id' => $product->id,
+                    'title' => Localization::translate($product->translations, 'name', $product->name, $locale),
+                    'slug' => $product->slug,
+                    'image_url' => $product->image_url,
+                    'price' => (float) data_get($price, 'amount', (float) $product->default_price),
+                    'price_money' => $price,
+                    'stock' => $stock,
+                    'stock_label' => $stock !== null ? rtrim(rtrim(number_format($stock, 2, '.', ''), '0'), '.') . ' en stock' : null,
+                    'artisan' => [
+                        'id' => $artisan->id,
+                        'name' => Localization::translate($artisan->translations, 'name', $artisan->name, $locale),
+                        'slug' => $artisan->slug,
+                    ],
+                    'region' => $artisan->region ? [
+                        'id' => $artisan->region->id,
+                        'name' => Localization::translate($artisan->region->translations, 'name', $artisan->region->name, $locale),
+                        'slug' => $artisan->region->slug,
+                    ] : null,
+                    'subtitle' => collect([
+                        Localization::translate($artisan->translations, 'name', $artisan->name, $locale),
+                        $artisan->region
+                            ? Localization::translate($artisan->region->translations, 'name', $artisan->region->name, $locale)
+                            : null,
+                    ])->filter()->implode(' - '),
+                    'links' => [
+                        'product_detail' => url("/api/v1/products/{$product->slug}"),
+                    ],
+                ];
+            })
+            ->values()
+            ->all();
+
+        return [
+            'eyebrow' => 'Arte destacado',
+            'title' => 'Piezas seleccionadas',
+            'view_all' => [
+                'label' => 'Ver todo',
+                'url' => url('/api/v1/products'),
+            ],
+            'items' => $products,
+        ];
+    }
+
+    protected function featuredRegionsPayload(Request $request): array
+    {
+        $locale = Localization::currentLocale($request);
+
+        $regions = Region::query()
+            ->active()
+            ->whereNotNull('banner_path')
+            ->withCount(['products' => fn ($query) => $query
+                ->where('products.is_active', true)
+                ->where('product_region.is_active', true)])
+            ->inRandomOrder()
+            ->limit(6)
+            ->get()
+            ->map(fn (Region $region) => [
+                'id' => $region->id,
+                'name' => Localization::translate($region->translations, 'name', $region->name, $locale),
+                'slug' => $region->slug,
+                'description' => Localization::translate($region->translations, 'description', $region->description, $locale),
+                'image_url' => $region->banner_url,
+                'image_path' => $region->banner_path,
+                'image_alt' => Localization::translate($region->translations, 'banner_alt', $region->banner_alt, $locale)
+                    ?: Localization::translate($region->translations, 'name', $region->name, $locale),
+                'products_count' => (int) ($region->products_count ?? 0),
+                'links' => [
+                    'region_detail' => url("/api/v1/regions/{$region->slug}"),
+                    'catalog' => url("/api/v1/regions/{$region->slug}"),
+                ],
+            ])
+            ->values()
+            ->all();
+
+        return [
+            'eyebrow' => 'Explora nuestras culturas',
+            'title' => 'De donde vive el arte',
+            'items' => $regions,
+        ];
+    }
+
+    protected function recentDiscoveriesPayload(Request $request): array
+    {
+        $locale = Localization::currentLocale($request);
+        $currency = Currency::currentCurrency($request);
+
+        $items = Product::query()
+            ->where('is_active', true)
+            ->inRandomOrder()
+            ->limit(6)
+            ->get()
+            ->map(function (Product $product) use ($locale, $currency) {
+                $price = Currency::money((float) $product->default_price, $currency);
+                $stock = $product->stock !== null ? (float) $product->stock : null;
+
+                return [
+                    'id' => $product->id,
+                    'title' => Localization::translate($product->translations, 'name', $product->name, $locale),
+                    'slug' => $product->slug,
+                    'image_url' => $product->image_url,
+                    'price' => (float) data_get($price, 'amount', (float) $product->default_price),
+                    'price_money' => $price,
+                    'stock' => $stock,
+                    'stock_label' => $stock !== null ? rtrim(rtrim(number_format($stock, 2, '.', ''), '0'), '.') . ' en stock' : null,
+                    'links' => [
+                        'product_detail' => url("/api/v1/products/{$product->slug}"),
+                    ],
+                ];
+            })
+            ->values()
+            ->all();
+
+        return [
+            'eyebrow' => 'Nuevo y destacado',
+            'title' => 'Descubrimientos recientes',
+            'view_all' => [
+                'label' => 'Ver todo',
+                'url' => url('/api/v1/products'),
+            ],
+            'items' => $items,
+        ];
     }
 
     protected function popularSearchesPayload(Request $request, int $termsLimit, int $productsLimit): array

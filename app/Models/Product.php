@@ -206,6 +206,13 @@ class Product extends Model
             ->withTimestamps();
     }
 
+    public function artisans(): BelongsToMany
+    {
+        return $this->belongsToMany(Artisan::class, 'artisan_product')
+            ->withPivot('sort_order')
+            ->withTimestamps();
+    }
+
     protected function imageUrl(): Attribute
     {
         return Attribute::make(
