@@ -3,6 +3,7 @@
 namespace App\Services\Payments;
 
 use App\Models\CashbackTransaction;
+use App\Models\EcommerceSetting;
 use App\Models\MarketplaceTransfer;
 use App\Models\Order;
 use App\Models\Payment;
@@ -25,6 +26,7 @@ class StripePaymentService
 
     public function createCheckoutSession(Order $order): array
     {
+        abort_unless((bool) data_get(EcommerceSetting::paymentMethodSettings(), 'stripe.enabled'), 422, 'Stripe no está habilitado.');
         abort_unless($order->isPendingPayment(), 422, 'El pedido no está pendiente de pago.');
         abort_unless((float) $order->total > 0, 422, 'El total del pedido debe ser mayor a cero.');
 

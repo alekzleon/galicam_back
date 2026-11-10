@@ -20,6 +20,7 @@ class EcommerceSetting extends Model
     public const KEY_HOME_TEMPLATE = 'home_template';
     public const KEY_LOCALIZATION = 'localization';
     public const KEY_CURRENCY = 'currency';
+    public const KEY_PAYMENT_METHODS = 'payment_methods';
 
     protected $fillable = [
         'key',
@@ -248,6 +249,27 @@ class EcommerceSetting extends Model
             'rounding' => [
                 'mode' => $roundingMode,
                 'precision' => $precision,
+            ],
+        ];
+    }
+
+    public static function paymentMethodSettings(): array
+    {
+        $settings = array_merge([
+            'stripe' => [
+                'enabled' => filled(config('services.stripe.secret_key')),
+            ],
+            'paypal' => [
+                'enabled' => filled(config('services.paypal.client_id')) && filled(config('services.paypal.client_secret')),
+            ],
+        ], static::getValue(static::KEY_PAYMENT_METHODS, []));
+
+        return [
+            'stripe' => [
+                'enabled' => (bool) data_get($settings, 'stripe.enabled', false),
+            ],
+            'paypal' => [
+                'enabled' => (bool) data_get($settings, 'paypal.enabled', false),
             ],
         ];
     }

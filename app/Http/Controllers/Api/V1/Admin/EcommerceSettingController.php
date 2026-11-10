@@ -12,6 +12,7 @@ use App\Http\Requests\Admin\UpdateHomeBenefitRequest;
 use App\Http\Requests\Admin\UpdateLocalizationSettingRequest;
 use App\Http\Requests\Admin\UpdateMetaPixelSettingRequest;
 use App\Http\Requests\Admin\UpdateNavTitleSettingRequest;
+use App\Http\Requests\Admin\UpdatePaymentMethodSettingRequest;
 use App\Http\Requests\Admin\UpdateSaleNotificationSettingRequest;
 use App\Http\Requests\Admin\UpdateStorefrontSettingRequest;
 use App\Models\EcommerceSetting;
@@ -110,6 +111,40 @@ class EcommerceSettingController extends Controller
             'data' => [
                 'key' => EcommerceSetting::KEY_CURRENCY,
                 'value' => EcommerceSetting::currencySettings(),
+            ],
+        ]);
+    }
+
+    public function paymentMethods(): JsonResponse
+    {
+        return response()->json([
+            'ok' => true,
+            'data' => [
+                'key' => EcommerceSetting::KEY_PAYMENT_METHODS,
+                'value' => EcommerceSetting::paymentMethodSettings(),
+            ],
+        ]);
+    }
+
+    public function updatePaymentMethods(UpdatePaymentMethodSettingRequest $request): JsonResponse
+    {
+        $current = EcommerceSetting::paymentMethodSettings();
+        $validated = $request->validated();
+
+        foreach (['stripe', 'paypal'] as $provider) {
+            if (array_key_exists($provider, $validated) && array_key_exists('enabled', $validated[$provider] ?? [])) {
+                $current[$provider]['enabled'] = (bool) $validated[$provider]['enabled'];
+            }
+        }
+
+        $setting = EcommerceSetting::setValue(EcommerceSetting::KEY_PAYMENT_METHODS, $current);
+
+        return response()->json([
+            'ok' => true,
+            'message' => 'Métodos de pago actualizados correctamente.',
+            'data' => [
+                'key' => $setting->key,
+                'value' => EcommerceSetting::paymentMethodSettings(),
             ],
         ]);
     }

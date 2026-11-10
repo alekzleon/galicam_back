@@ -14,6 +14,8 @@ class Payment extends Model
         'payment_method',
         'stripe_session_id',
         'stripe_payment_intent_id',
+        'paypal_order_id',
+        'paypal_capture_id',
         'amount',
         'currency',
         'paid_at',

@@ -37,6 +37,8 @@ class Order extends Model
         'payment_method',
         'stripe_session_id',
         'stripe_payment_intent_id',
+        'paypal_order_id',
+        'paypal_capture_id',
         'paid_at',
         'shipping_address_snapshot',
         'document_notes',

@@ -36,6 +36,8 @@ class OrderController extends Controller
                     $subQuery->where('number', 'like', "%{$search}%")
                         ->orWhere('stripe_session_id', 'like', "%{$search}%")
                         ->orWhere('stripe_payment_intent_id', 'like', "%{$search}%")
+                        ->orWhere('paypal_order_id', 'like', "%{$search}%")
+                        ->orWhere('paypal_capture_id', 'like', "%{$search}%")
                         ->orWhereHas('user', function ($userQuery) use ($search) {
                             $userQuery->where('name', 'like', "%{$search}%")
                                 ->orWhere('email', 'like', "%{$search}%")
@@ -262,6 +264,8 @@ class OrderController extends Controller
             'shipping' => (float) $order->shipping,
             'total' => (float) $order->total,
             'regional_splits' => data_get($order->metadata, 'regional_splits', []),
+            'paypal_order_id' => $order->paypal_order_id,
+            'paypal_capture_id' => $order->paypal_capture_id,
             'paid_at' => $order->paid_at,
             'document_notes' => $order->document_notes,
             'created_at' => $order->created_at,
@@ -320,6 +324,10 @@ class OrderController extends Controller
                 'session_id' => $order->stripe_session_id,
                 'payment_intent_id' => $order->stripe_payment_intent_id,
             ],
+            'paypal' => [
+                'order_id' => $order->paypal_order_id,
+                'capture_id' => $order->paypal_capture_id,
+            ],
             'promotions_applied' => data_get($order->metadata, 'promotions_applied', []),
             'coupon' => data_get($order->metadata, 'coupon'),
             'loyalty' => data_get($order->metadata, 'loyalty', []),
@@ -341,6 +349,8 @@ class OrderController extends Controller
                 'payment_method' => $payment->payment_method,
                 'stripe_session_id' => $payment->stripe_session_id,
                 'stripe_payment_intent_id' => $payment->stripe_payment_intent_id,
+                'paypal_order_id' => $payment->paypal_order_id,
+                'paypal_capture_id' => $payment->paypal_capture_id,
                 'amount' => (float) $payment->amount,
                 'currency' => strtolower($payment->currency),
                 'paid_at' => $payment->paid_at,

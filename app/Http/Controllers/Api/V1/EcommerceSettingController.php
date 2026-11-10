@@ -44,6 +44,17 @@ class EcommerceSettingController extends Controller
         ]);
     }
 
+    public function paymentMethods(): JsonResponse
+    {
+        return response()->json([
+            'ok' => true,
+            'data' => [
+                'key' => EcommerceSetting::KEY_PAYMENT_METHODS,
+                'value' => EcommerceSetting::paymentMethodSettings(),
+            ],
+        ]);
+    }
+
     public function homeBenefit(int $benefit): JsonResponse
     {
         $this->ensureHomeBenefitNumber($benefit);

@@ -335,7 +335,15 @@ class OrderService
             'cart_id' => $order->cart_id,
             'total' => (float) $order->total,
             'currency' => strtolower($order->currency),
+            'payment_method' => $order->payment_method,
+            'stripe_session_id' => $order->stripe_session_id,
+            'paypal_order_id' => $order->paypal_order_id,
+            'can_retry_payment' => true,
             'created_at' => $order->created_at,
+            'payment_endpoints' => [
+                'stripe_session' => '/api/v1/checkout/stripe/session',
+                'paypal_order' => '/api/v1/checkout/paypal/order',
+            ],
             'restore_endpoint' => "/api/v1/checkout/recoverable-order/restore",
         ];
     }

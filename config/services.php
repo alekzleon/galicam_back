@@ -66,4 +66,14 @@ return [
         'connect_return_url' => env('STRIPE_CONNECT_RETURN_URL', env('FRONTEND_URL', 'http://localhost:5173') . '/admin/stripe-connect/return'),
     ],
 
+    'paypal' => [
+        'mode' => env('PAYPAL_MODE', 'sandbox'),
+        'client_id' => env('PAYPAL_CLIENT_ID'),
+        'client_secret' => env('PAYPAL_CLIENT_SECRET'),
+        'webhook_id' => env('PAYPAL_WEBHOOK_ID'),
+        'currency' => env('PAYPAL_CURRENCY', 'MXN'),
+        'success_url' => env('PAYPAL_SUCCESS_URL', env('FRONTEND_URL', 'http://localhost:5173') . '/checkout/paypal/success'),
+        'cancel_url' => env('PAYPAL_CANCEL_URL', env('FRONTEND_URL', 'http://localhost:5173') . '/checkout/cancel'),
+    ],
+
 ];

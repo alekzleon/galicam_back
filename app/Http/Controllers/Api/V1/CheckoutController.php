@@ -8,6 +8,7 @@ use App\Models\Order;
 use App\Services\CartService;
 use App\Services\Checkout\CheckoutPreviewService;
 use App\Services\Orders\OrderService;
+use App\Services\Payments\PaypalPaymentService;
 use App\Services\Payments\StripePaymentService;
 use App\Services\SalesChannelService;
 use Illuminate\Http\JsonResponse;
@@ -20,6 +21,7 @@ class CheckoutController extends Controller
         protected CheckoutPreviewService $checkoutPreviewService,
         protected OrderService $orderService,
         protected StripePaymentService $stripePaymentService,
+        protected PaypalPaymentService $paypalPaymentService,
         protected SalesChannelService $salesChannelService
     ) {
     }
@@ -33,7 +35,7 @@ class CheckoutController extends Controller
         if ($recoverableOrder) {
             return response()->json([
                 'ok' => true,
-                'message' => 'Hay un carrito pendiente de recuperar antes de continuar checkout.',
+                'message' => 'Hay un pedido pendiente de pago antes de continuar checkout.',
                 'data' => [
                     'can_checkout' => false,
                     'cart' => null,
@@ -84,13 +86,13 @@ class CheckoutController extends Controller
         if ($recoverableOrder) {
             return response()->json([
                 'ok' => false,
-                'message' => 'Hay un carrito pendiente de recuperar antes de continuar checkout.',
+                'message' => 'Hay un pedido pendiente de pago antes de continuar checkout.',
                 'data' => [
                     'can_checkout' => false,
                     'blockers' => [
                         [
                             'code' => 'recoverable_pending_order',
-                            'message' => 'Recupera tu carrito pendiente antes de continuar.',
+                            'message' => 'Completa o recupera tu pedido pendiente antes de continuar.',
                         ],
                     ],
                     'recoverable_order' => $this->orderService->recoverableOrderPayload($recoverableOrder),
@@ -198,6 +200,53 @@ class CheckoutController extends Controller
             'ok' => true,
             'message' => 'Sesión de Stripe creada correctamente.',
             'data' => $session,
+        ]);
+    }
+
+    public function createPaypalOrder(Request $request): JsonResponse
+    {
+        $user = $this->currentUser($request);
+
+        abort_unless($user, 401, 'Debes iniciar sesión para pagar.');
+
+        $validated = $request->validate([
+            'order_id' => ['required', 'integer', 'exists:orders,id'],
+        ]);
+
+        $order = Order::query()
+            ->with(['items', 'user'])
+            ->whereKey($validated['order_id'])
+            ->where('user_id', $user->id)
+            ->firstOrFail();
+
+        abort_unless($order->isPendingPayment(), 422, 'El pedido no está pendiente de pago.');
+
+        $paypalOrder = $this->paypalPaymentService->createOrder($order);
+
+        return response()->json([
+            'ok' => true,
+            'message' => 'Orden de PayPal creada correctamente.',
+            'data' => $paypalOrder,
+        ]);
+    }
+
+    public function capturePaypalOrder(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'paypal_order_id' => ['required', 'string'],
+        ]);
+
+        $order = $this->paypalPaymentService->captureOrder($validated['paypal_order_id']);
+
+        abort_unless($order, 404, 'No se encontró un pedido para esta orden de PayPal.');
+        abort_unless((int) $order->user_id === (int) $request->user()->id, 403, 'No tienes acceso a este pedido.');
+
+        return response()->json([
+            'ok' => true,
+            'message' => $order->payment_status === Order::PAYMENT_PAID
+                ? 'Pago PayPal confirmado correctamente.'
+                : 'La orden de PayPal todavía no aparece como pagada.',
+            'data' => $this->orderPayload($order),
         ]);
     }
 
@@ -321,6 +370,8 @@ class CheckoutController extends Controller
             'total' => (float) $order->total,
             'stripe_session_id' => $order->stripe_session_id,
             'stripe_payment_intent_id' => $order->stripe_payment_intent_id,
+            'paypal_order_id' => $order->paypal_order_id,
+            'paypal_capture_id' => $order->paypal_capture_id,
             'paid_at' => $order->paid_at,
             'promotions_applied' => data_get($order->metadata, 'promotions_applied', []),
             'coupon' => data_get($order->metadata, 'coupon'),

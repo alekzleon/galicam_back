@@ -20,6 +20,7 @@ use App\Http\Controllers\Api\V1\ContactFaqController;
 use App\Http\Controllers\Api\V1\ContactLeadController;
 use App\Http\Controllers\Api\V1\EcommerceSettingController;
 use App\Http\Controllers\Api\V1\HomeController;
+use App\Http\Controllers\Api\V1\PaypalWebhookController;
 use App\Http\Controllers\Api\V1\StripeWebhookController;
 use App\Http\Controllers\Api\V1\SiteSettingController;
 use App\Http\Controllers\Api\V1\Account\AddressController;
@@ -132,6 +133,7 @@ Route::prefix('v1')->group(function () {
     Route::get('/ecommerce-settings/meta-pixel', [EcommerceSettingController::class, 'metaPixel']);
     Route::get('/ecommerce-settings/localization', [EcommerceSettingController::class, 'localization']);
     Route::get('/ecommerce-settings/currency', [EcommerceSettingController::class, 'currency']);
+    Route::get('/ecommerce-settings/payment-methods', [EcommerceSettingController::class, 'paymentMethods']);
     Route::get('/ecommerce-settings/abandoned-cart', [EcommerceSettingController::class, 'abandonedCart']);
     Route::get('/ecommerce-settings/sale-notifications', [EcommerceSettingController::class, 'saleNotifications']);
     Route::get('/ecommerce-settings/home-benefits', [EcommerceSettingController::class, 'homeBenefits']);
@@ -154,6 +156,7 @@ Route::prefix('v1')->group(function () {
     Route::get('/promotions', [CustomerPromotionController::class, 'index']);
 
     Route::post('/webhooks/stripe', StripeWebhookController::class);
+    Route::post('/webhooks/paypal', PaypalWebhookController::class);
 
     /*
     |--------------------------------------------------------------------------
@@ -170,6 +173,7 @@ Route::prefix('v1')->group(function () {
     Route::post('/checkout/validate', [CheckoutController::class, 'validateCart']);
     Route::post('/checkout/orders', [CheckoutController::class, 'createOrder']);
     Route::post('/checkout/stripe/session', [CheckoutController::class, 'createStripeSession']);
+    Route::post('/checkout/paypal/order', [CheckoutController::class, 'createPaypalOrder']);
 
     /*
     |--------------------------------------------------------------------------
@@ -221,6 +225,7 @@ Route::prefix('v1')->group(function () {
         Route::post('/checkout/orders/{order}/restore-cart', [CheckoutController::class, 'restoreCartFromOrder']);
         Route::post('/checkout/recoverable-order/restore', [CheckoutController::class, 'restoreRecoverableOrder']);
         Route::post('/checkout/stripe/session/confirm', [CheckoutController::class, 'confirmStripeSession']);
+        Route::post('/checkout/paypal/order/capture', [CheckoutController::class, 'capturePaypalOrder']);
 
         /*
         |--------------------------------------------------------------------------
@@ -909,6 +914,15 @@ Route::prefix('v1')->group(function () {
                     ->middleware('module:configuracion_ecommerce');
 
                 Route::patch('ecommerce-settings/currency', [AdminEcommerceSettingController::class, 'updateCurrency'])
+                    ->middleware('module:configuracion_ecommerce');
+
+                Route::get('ecommerce-settings/payment-methods', [AdminEcommerceSettingController::class, 'paymentMethods'])
+                    ->middleware('module:configuracion_ecommerce');
+
+                Route::put('ecommerce-settings/payment-methods', [AdminEcommerceSettingController::class, 'updatePaymentMethods'])
+                    ->middleware('module:configuracion_ecommerce');
+
+                Route::patch('ecommerce-settings/payment-methods', [AdminEcommerceSettingController::class, 'updatePaymentMethods'])
                     ->middleware('module:configuracion_ecommerce');
 
                 Route::get('ecommerce-settings/abandoned-cart', [AdminEcommerceSettingController::class, 'abandonedCart'])
