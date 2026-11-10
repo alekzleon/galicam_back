@@ -25,7 +25,8 @@ return [
         'https://demo.cloudishop.mx',
         'https://www.demo.cloudishop.mx',
         'https://tuxcroquetitas.com',
-        'https://galicam.paginas.art',
+        'https://galicam.com',
+        'https://www.galicam.com',
     ],
 
     'allowed_origins_patterns' => [],
