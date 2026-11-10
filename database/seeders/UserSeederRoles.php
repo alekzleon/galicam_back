@@ -17,7 +17,6 @@ class UserSeederRoles extends Seeder
             'sistemas',
             'marketing',
             'credito_cobranza',
-            'cliente',
         ];
 
         foreach ($roles as $roleName) {
@@ -27,7 +26,7 @@ class UserSeederRoles extends Seeder
                 continue;
             }
 
-            $email = $roleName . '@cloudishop.mx';
+            $email = $roleName . '@galicam.com';
             $user = User::query()
                 ->where('username', $roleName)
                 ->orWhere('email', $email)

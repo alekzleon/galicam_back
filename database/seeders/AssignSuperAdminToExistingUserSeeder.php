@@ -11,7 +11,7 @@ class AssignSuperAdminToExistingUserSeeder extends Seeder
 {
         public function run(): void
         {
-            $email = 'admin@cloudishop.mx';
+            $email = 'admin@galicam.com';
 
             $user = User::where('email', $email)->first();
             $role = Role::where('name', 'super_admin')->first();

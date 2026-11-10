@@ -116,7 +116,10 @@ class RoleModuleSeeder extends Seeder
                 continue;
             }
 
-            $moduleIds = Module::whereIn('name', $moduleNames)->pluck('id')->toArray();
+            // Administrators receive every module, including newly added modules.
+            $moduleIds = in_array($roleName, ['super_admin', 'admin'], true)
+                ? Module::query()->pluck('id')->toArray()
+                : Module::whereIn('name', $moduleNames)->pluck('id')->toArray();
 
             $role->modules()->sync($moduleIds);
         }
